@@ -1,0 +1,304 @@
+/* ═══════════════════════════════════════════
+   STEWARD DESIGN SYSTEM — TOKEN LAYER
+   ═══════════════════════════════════════════
+
+   Layer 1 · Primitive  → what the colour IS
+   Layer 2 · Semantic   → what the colour DOES
+   Rule: components only ever speak semantic.
+*/
+
+:root {
+
+  /* ── LAYER 1: PRIMITIVES ─────────────────
+     Named for what they are.
+     Never use directly in components.        */
+
+  --steward-ink:   #17201E;
+  --steward-teal:  #075E57;
+  --steward-mist:  #55A998;
+  --steward-blue:  #2563EB;
+  --steward-white: #FFFFFF;
+
+  --steward-ink-90:  #1E2B28;
+  --steward-ink-80:  #2B3D39;
+  --steward-teal-10: #F0F8F7;
+  --steward-teal-20: #D4EDEA;
+  --steward-teal-40: #8AC8C3;
+  --steward-mist-20: #D9EFED;
+  --steward-blue-10: #EFF4FE;
+  --steward-blue-80: #1D4ED8;
+  --steward-gray-10: #F7F8F8;
+  --steward-gray-20: #ECEEED;
+  --steward-gray-40: #C4C9C8;
+  --steward-gray-60: #8C9492;
+  --steward-gray-80: #4A5452;
+
+  /* ── LAYER 2: SEMANTICS ──────────────────
+     Named for what they DO.
+     Always use these in components.          */
+
+  --color-brand:          var(--steward-teal);
+  --color-brand-surface:  var(--steward-teal-10);
+  --color-brand-subtle:   var(--steward-teal-20);
+  --color-brand-border:   var(--steward-teal-40);
+
+  --color-confirmation:         var(--steward-blue);
+  --color-confirmation-hover:   var(--steward-blue-80);
+  --color-confirmation-surface: var(--steward-blue-10);
+
+  --color-text:           var(--steward-ink);
+  --color-text-secondary: var(--steward-gray-80);
+  --color-text-subtle:    var(--steward-gray-60);
+  --color-text-disabled:  var(--steward-gray-40);
+  --color-text-on-brand:  var(--steward-white);
+
+  --color-surface:         var(--steward-white);
+  --color-surface-page:    var(--steward-gray-10);
+  --color-surface-overlay: var(--steward-ink);
+
+  --color-subtle:         var(--steward-mist);
+  --color-subtle-surface: var(--steward-mist-20);
+
+  --color-border:        var(--steward-gray-20);
+  --color-border-strong: var(--steward-gray-40);
+
+  --color-success:         #15803D;
+  --color-success-surface: #F0FDF4;
+  --color-warning:         #B45309;
+  --color-warning-surface: #FFFBEB;
+  --color-error:           #DC2626;
+  --color-error-surface:   #FEF2F2;
+
+  /* ── TYPOGRAPHY ──────────────────────────  */
+  --font-display: 'Expletus Sans', sans-serif;
+  --font-body:    'Inter', system-ui, sans-serif;
+
+  --text-xs:      0.75rem;
+  --text-sm:      0.875rem;
+  --text-base:    1rem;
+  --text-lg:      1.125rem;
+  --text-xl:      1.25rem;
+  --text-2xl:     1.5rem;
+  --text-3xl:     2rem;
+
+  --weight-regular:  400;
+  --weight-medium:   500;
+  --weight-semibold: 600;
+  --weight-bold:     700;
+
+  --leading-tight:   1.2;
+  --leading-snug:    1.35;
+  --leading-normal:  1.5;
+  --leading-relaxed: 1.65;
+
+  --tracking-tight:   -0.02em;
+  --tracking-normal:   0em;
+  --tracking-wide:     0.04em;
+  --tracking-widest:   0.12em;
+
+  /* ── SPACING (4px base) ──────────────────  */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+
+  /* ── RADIUS ──────────────────────────────  */
+  --radius-sm:   0.375rem;
+  --radius-md:   0.75rem;
+  --radius-lg:   1rem;
+  --radius-xl:   1.5rem;
+  --radius-2xl:  2rem;
+  --radius-full: 9999px;
+
+  /* ── ELEVATION ───────────────────────────  */
+  --shadow-xs:  0 1px  2px rgba(23,32,30,0.06);
+  --shadow-sm:  0 2px  8px rgba(23,32,30,0.08);
+  --shadow-md:  0 4px 16px rgba(23,32,30,0.10);
+  --shadow-lg:  0 8px 32px rgba(23,32,30,0.14);
+  --shadow-xl:  0 16px 48px rgba(23,32,30,0.18);
+
+  /* ── LIQUID GLASS DESIGN SYSTEM ────────
+     Clean, crisp translucent surfaces with subtle borders and elevation. */
+  --liquid-glass-bg: rgba(255, 255, 255, 0.85);
+  --liquid-glass-border: rgba(255, 255, 255, 0.80);
+  --liquid-glass-border-subtle: rgba(7, 94, 87, 0.12);
+  --liquid-glass-backdrop: blur(16px);
+  --liquid-glass-shadow: 0 4px 20px rgba(7, 94, 87, 0.06);
+  --liquid-glass-highlight: transparent;
+
+  /* Liquid Glass Accent / Brand */
+  --liquid-glass-brand-bg: var(--color-brand);
+  --liquid-glass-brand-border: rgba(138, 200, 195, 0.35);
+  --liquid-glass-brand-shadow: 0 8px 24px rgba(7, 94, 87, 0.25);
+
+  /* ── MOTION ──────────────────────────────  */
+  --ease-out:    cubic-bezier(0.0,  0.0,  0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast:   120ms;
+  --duration-normal: 220ms;
+  --duration-slow:   380ms;
+}
+
+
+/* ═══════════════════════════════════════════
+   DARK MODE
+   Override semantic tokens only.
+   Primitives stay untouched.
+   Components change nothing — this is the
+   entire point of the two-layer system.
+═══════════════════════════════════════════ */
+
+[data-theme="dark"] {
+
+  /* Surfaces — rich deep obsidian-teal layers */
+  --color-surface:         #172421;   /* Cards, sheets, item rows */
+  --color-surface-page:    #0E1615;   /* Page background (deep obsidian with cool slate-teal) */
+  --color-surface-raised:  #1F302D;   /* Modals, elevated dialogs */
+  --color-surface-overlay: #080D0C;   /* Deepest overlay */
+  --color-surface-sunken:  #0B1211;   /* Inputs, recessed wells */
+
+  /* Brand colors — adjusted for dark mode contrast */
+  --color-brand:          #0E8E83;   /* Radiant jewel teal */
+  --color-brand-hover:    #109E92;
+  --color-text-on-brand:  #FFFFFF;
+  --color-subtle:         #55A998;   /* Steward mist */
+
+  /* Brand surface tints */
+  --color-brand-surface:  rgba(14, 142, 131, 0.16);
+  --color-brand-subtle:   rgba(14, 142, 131, 0.28);
+  --color-brand-border:   rgba(85, 169, 152, 0.35);
+
+  /* Confirmation (Royal Blue) — illuminated for dark mode */
+  --color-confirmation:         #60A5FA; /* luminous sky-blue text on dark */
+  --color-confirmation-hover:   #93C5FD;
+  --color-confirmation-surface: rgba(37, 99, 235, 0.18);
+
+  /* Text — crisp, high-contrast, luminous readability */
+  --color-text:           #FFFFFF;
+  --color-text-secondary: #C8DDD9;  /* Silvery-mint secondary text */
+  --color-text-subtle:    #7E9F98;  /* Muted sophisticated teal-slate */
+  --color-text-disabled:  rgba(255, 255, 255, 0.30);
+
+  /* Borders — delicate luminous jewel rim */
+  --color-border:        rgba(85, 169, 152, 0.15);
+  --color-border-strong: rgba(85, 169, 152, 0.28);
+
+  /* Accent surface */
+  --color-subtle-surface: rgba(85, 169, 152, 0.16);
+
+  /* Feedback surfaces */
+  --color-success:         #4ADE80;
+  --color-success-surface: rgba(34, 197, 94, 0.16);
+  
+  --color-warning:         #FBBF24;
+  --color-warning-surface: rgba(245, 158, 11, 0.16);
+  
+  --color-error:           #F87171;
+  --color-error-surface:   rgba(239, 68, 68, 0.16);
+
+  /* Liquid Glass Tokens — Dark Mode */
+  --liquid-glass-bg: rgba(20, 32, 29, 0.85);
+  --liquid-glass-border: rgba(255, 255, 255, 0.10);
+  --liquid-glass-border-subtle: rgba(85, 169, 152, 0.22);
+  --liquid-glass-backdrop: blur(20px);
+  --liquid-glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --liquid-glass-highlight: transparent;
+
+  /* Liquid Glass Accent / Brand — Dark Mode */
+  --liquid-glass-brand-bg: linear-gradient(135deg, #0A6D64 0%, #0E8E83 100%);
+  --liquid-glass-brand-border: rgba(85, 169, 152, 0.40);
+  --liquid-glass-brand-shadow: 0 8px 28px rgba(10, 109, 100, 0.35);
+
+  /* Gradients */
+  --gradient-brand:        linear-gradient(135deg, #0A736A 0%, #0E8E83 100%);
+  --gradient-brand-rich:   linear-gradient(135deg, #074B45 0%, #0A6F65 50%, #0F968B 100%);
+  --gradient-card-hero:    radial-gradient(circle at 50% 35%, rgba(14, 142, 131, 0.22) 0%, rgba(14, 22, 21, 0.9) 100%);
+  --gradient-confirm:      linear-gradient(135deg, #2563EB 0%, #3B82F6 100%);
+}
+
+
+/* ─────────────────────────────────────────
+   DARK MODE — Body background
+   Ensures html/body also transitions
+───────────────────────────────────────── */
+[data-theme="dark"] body {
+  background: #0E1615;
+}
+
+/* ─────────────────────────────────────────
+   DARK MODE — Bottom nav & Top bar Liquid Glass
+───────────────────────────────────────── */
+[data-theme="dark"] .bottom-nav {
+  background: rgba(14, 22, 21, 0.88);
+  border-top-color: rgba(85, 169, 152, 0.18);
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.45);
+}
+
+[data-theme="dark"] .top-bar {
+  background: rgba(14, 22, 21, 0.88);
+  border-bottom-color: rgba(85, 169, 152, 0.18);
+}
+
+/* ─────────────────────────────────────────
+   DARK MODE — Divider
+───────────────────────────────────────── */
+[data-theme="dark"] .divider {
+  background: #0E1615;
+}
+
+/* ─────────────────────────────────────────
+   DARK MODE — Item detail hero
+   Already dark, stays dark, glow intensifies
+───────────────────────────────────────── */
+[data-theme="dark"] .item-detail__hero {
+  background: radial-gradient(circle at 50% 40%, rgba(14, 142, 131, 0.25) 0%, #0B1211 100%);
+}
+
+
+
+/* ─────────────────────────────────────────
+   DARK MODE — Confirmation check
+   Blue is still blue — stays exactly the same
+───────────────────────────────────────── */
+[data-theme="dark"] .confirmation-screen {
+  background: #0E1615;
+}
+
+/* ─────────────────────────────────────────
+   DARK MODE — Order Status header card
+───────────────────────────────────────── */
+[data-theme="dark"] .os-header-card {
+  background: linear-gradient(135deg, #074842 0%, #0A665E 55%, #0E8277 100%);
+  border-color: rgba(85, 169, 152, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+/* ─────────────────────────────────────────
+   DARK MODE — Payment amount card
+───────────────────────────────────────── */
+[data-theme="dark"] .payment-amount {
+  background: #172421;
+  border-color: rgba(85, 169, 152, 0.20);
+}
+
+
+
+/* ═══════════════════════════════════════════
+   GRADIENT TOKENS
+═══════════════════════════════════════════ */
+:root {
+  --gradient-brand:        linear-gradient(135deg, #075E57 0%, #0A7A71 100%);
+  --gradient-brand-rich:   linear-gradient(135deg, #054D47 0%, #075E57 50%, #0A8A80 100%);
+  --gradient-mist:         linear-gradient(135deg, #55A998 0%, #8AC8C3 100%);
+  --gradient-ink:          linear-gradient(160deg, #17201E 0%, #2B3D39 100%);
+  --gradient-ink-deep:     linear-gradient(160deg, #111817 0%, #1E2B28 100%);
+  --gradient-surface-glow: linear-gradient(160deg, #F0F8F7 0%, #FFFFFF 60%);
+  --gradient-card-hero:    linear-gradient(135deg, #D4EDEA 0%, #F0F8F7 100%);
+  --gradient-confirm:      linear-gradient(135deg, #2563EB 0%, #3B82F6 100%);
+}

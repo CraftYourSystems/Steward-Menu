@@ -1,0 +1,200 @@
+.payment-screen { background: var(--color-surface-page); }
+
+.payment-body {
+  padding: var(--space-6) var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.payment-amount {
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-backdrop);
+  -webkit-backdrop-filter: var(--liquid-glass-backdrop);
+  border-radius: var(--radius-xl);
+  padding: var(--space-6) var(--space-6);
+  border: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+  position: relative;
+  overflow: hidden;
+}
+
+.payment-amount__label {
+  font-size: var(--text-sm);
+  color: var(--color-text-subtle);
+  margin-bottom: var(--space-1);
+}
+
+.payment-amount__value {
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-bold);
+  color: var(--color-text);
+  letter-spacing: var(--tracking-tight);
+}
+
+.payment-section-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  margin-bottom: 0;
+}
+
+.payment-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: calc(-1 * var(--space-3));
+}
+
+.payment-method {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.payment-method.active {
+  border-color: var(--color-confirmation);
+  background: var(--color-confirmation-surface);
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.08);
+}
+
+.payment-method__icon { font-size: 1.5rem; flex-shrink: 0; }
+
+.payment-method__text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.payment-method__label {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text);
+}
+
+.payment-method__sub {
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.payment-method__radio {
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  border: 2px solid var(--color-border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.payment-method__radio.active { border-color: var(--color-confirmation); }
+
+.payment-method__radio-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--color-confirmation);
+  animation: dotIn var(--duration-fast) var(--ease-spring) both;
+}
+
+@keyframes dotIn {
+  from { transform: scale(0); }
+  to   { transform: scale(1); }
+}
+
+.payment-secure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
+}
+
+.payment-footer {
+  background: var(--liquid-glass-bg);
+  backdrop-filter: var(--liquid-glass-backdrop);
+  -webkit-backdrop-filter: var(--liquid-glass-backdrop);
+  border-top: 1px solid var(--liquid-glass-border);
+  box-shadow: var(--liquid-glass-shadow);
+  padding: var(--space-4) var(--space-5);
+  padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+}
+
+.payment-processing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+}
+
+.payment-spinner {
+  width: 20px; height: 20px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-confirmation);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─────────────────────────────────────────
+   DARK MODE OVERRIDES
+───────────────────────────────────────── */
+[data-theme="dark"] .payment-amount {
+  background: #172421;
+  border-color: rgba(85, 169, 152, 0.20);
+}
+
+[data-theme="dark"] .payment-method {
+  background: #172421;
+  border-color: rgba(85, 169, 152, 0.18);
+}
+
+[data-theme="dark"] .payment-method.active {
+  border-color: #60A5FA;
+  background: rgba(37, 99, 235, 0.16);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.25);
+}
+
+[data-theme="dark"] .payment-method__radio {
+  border-color: rgba(85, 169, 152, 0.35);
+}
+
+[data-theme="dark"] .payment-method.active .payment-method__radio {
+  border-color: #60A5FA;
+}
+
+[data-theme="dark"] .payment-method__radio-dot {
+  background: #60A5FA;
+}
+
+[data-theme="dark"] .payment-note {
+  color: #93C5FD;
+}
+
+[data-theme="dark"] .payment-footer {
+  background: rgba(14, 22, 21, 0.88);
+  border-top-color: rgba(85, 169, 152, 0.18);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.40);
+}
+
