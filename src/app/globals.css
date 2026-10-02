@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/*
+ * Semantic tokens. Tailwind's default palette is removed so that generic
+ * colours (bg-blue-500, text-gray-700, …) do not exist as accidental choices.
+ */
+@theme {
+  --color-*: initial;
+
+  --color-brand: var(--steward-teal);
+  --color-brand-contrast: var(--steward-white);
+  --color-accent: var(--steward-mist);
+
+  --color-background: var(--steward-white);
+  --color-surface: var(--steward-white);
+  --color-surface-muted: var(--steward-neutral-50);
+
+  --color-text: var(--steward-ink);
+  --color-text-muted: var(--steward-neutral-600);
+  --color-text-inverse: var(--steward-white);
+
+  --color-border: var(--steward-neutral-200);
+  --color-border-strong: var(--steward-neutral-400);
+
+  --color-focus: var(--steward-blue);
+
+  --color-confirmation: var(--steward-confirmation-700);
+  --color-confirmation-subtle: var(--steward-confirmation-50);
+  --color-warning: var(--steward-warning-700);
+  --color-warning-subtle: var(--steward-warning-50);
+  --color-danger: var(--steward-danger-700);
+  --color-danger-subtle: var(--steward-danger-50);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-expletus), var(--font-inter), ui-sans-serif, sans-serif;
+}
+
+@layer base {
+  html {
+    color: var(--color-text);
+    background-color: var(--color-background);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}

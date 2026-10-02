@@ -1,0 +1,36 @@
+/*
+ * Steward design tokens — the ONLY place raw colour values may appear.
+ *
+ * Layer 1 (this file): primitives.
+ * Layer 2 (globals.css @theme): semantic tokens that components consume.
+ *
+ * Contrast (WCAG 2.x, measured against the paired background):
+ *   ink on white 16.6 · teal on white 7.6 · white on teal 7.6
+ *   neutral-600 on white 6.6 / on neutral-50 6.1
+ *   confirmation-700 on white 5.4 / on confirmation-50 4.7
+ *   warning-700 on white 5.4 / on warning-50 4.9
+ *   danger-700 on white 6.6 / on danger-50 5.8
+ *   mist on white 2.8 — never use Ocean Mist for body text.
+ */
+:root {
+  /* Steward brand primitives (CLAUDE.md §10). */
+  --steward-ink: #17201e;
+  --steward-teal: #075e57;
+  --steward-mist: #55a998;
+  --steward-blue: #2563eb;
+  --steward-white: #ffffff;
+
+  /* Neutral primitives, derived from Ink for a calm, cohesive surface scale. */
+  --steward-neutral-50: #f3f6f5;
+  --steward-neutral-200: #ccd6d3;
+  --steward-neutral-400: #8a9894;
+  --steward-neutral-600: #52605c;
+
+  /* Status primitives. Exposed to components only through semantic tokens. */
+  --steward-confirmation-700: #1b7a43;
+  --steward-confirmation-50: #e6f4ec;
+  --steward-warning-700: #9a5b00;
+  --steward-warning-50: #fdf1dc;
+  --steward-danger-700: #b42318;
+  --steward-danger-50: #fdecea;
+}

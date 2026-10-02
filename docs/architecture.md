@@ -1,0 +1,69 @@
+# Steward Menu — Customer Application Architecture
+
+This document explains how the customer application implements the F-01 Order Flow contract. The contract itself is in `Steward-Frontend/docs/`:
+
+- `features/F-01-decision-register.md` (F1-01 to F1-39, locked)
+- `features/F-01-technical-design.md` (endpoints, session, slices S1–S7)
+- `frontend-route-map.md` §1 (customer routes, decisions R1–R4)
+- `auth-contract.md` §16, §19 (Origin checks, host-only `SameSite=Lax` cookies)
+
+Where this document and the contract differ, the contract wins.
+
+## Principles
+
+- **The backend is the authority.** FastAPI decides the session, table, menu, availability, prices, tax, payment and order state. This app displays what the backend returns and never computes amounts.
+- **Customers have no account.** There is no sign-in, no `/login`, no restaurant-user session and no CSRF token fetch. A customer 401 means the table session ended; it is handled on the page, never by a redirect. `src/test/no-login-redirect.test.ts` enforces this.
+- **Browser-only customer data (TD-3).** Every customer request is made from the browser with `credentials: 'include'`. Server components render no customer data and never forward cookies.
+- **No browser storage for customer state (F1-01).** The session lives only in the HttpOnly `steward_customer_session` cookie, set by the API host. Nothing goes in `localStorage` or `sessionStorage`; tests assert this.
+- **Mocks never ship.** MSW, fixtures and the mock API live under `src/test/`; ESLint forbids importing them from application code, and `pnpm check:bundle` verifies the production build.
+
+## Structure
+
+```text
+src/
+├── app/
+│   ├── layout.tsx                 # fonts, global styles, customer query client, mobile container
+│   ├── t/[qrCode]/page.tsx        # R1: QR entry (renders CustomerEntry)
+│   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
+│   └── error.tsx                  # last-resort error state
+├── features/
+│   ├── customer-session/          # POST /customer/sessions, entry problem states, query keys
+│   └── customer-menu/             # GET /customer/menu, menu schema and view
+├── lib/
+│   ├── api/request.ts             # fetch with timeout, Zod contract validation
+│   ├── api/errors.ts              # error envelope → ApiError, safe user messages, Retry-After
+│   ├── api/customer.ts            # customerGet / customerSend: credentials: 'include', no CSRF token
+│   ├── api/query-client.ts        # TanStack Query defaults; no 401 redirect
+│   ├── env.ts                     # NEXT_PUBLIC_API_BASE_URL validation
+│   └── format/money.ts            # paise → INR display
+├── components/ui/                 # Button, StatePanel, ErrorState, EmptyState, Skeleton, Money
+├── styles/tokens.css              # Steward brand primitives
+└── test/                          # MSW handlers, factories, mock API, setup (never shipped)
+e2e/                               # Playwright against the mock API
+e2e/real-backend/                  # Playwright against a running FastAPI
+```
+
+## S1 flow
+
+1. `/t/[qrCode]` renders `CustomerEntry` in the browser.
+2. `POST /customer/sessions { qr_code }` creates or resumes the session. The backend sets the cookie; the body carries only the restaurant name, table number and session stage.
+3. Entry problems map from the error `code`, never the message: unknown QR → one generic "We couldn't find this table" (404); inactive table → "Table unavailable" (`409 table_unavailable`); session at another table → "Your order is at Table N" (`409 customer_session_other_table`); rate limited → wait and retry (429, `Retry-After`).
+4. `GET /customer/menu` returns the session restaurant's available items grouped by category, plus uncategorized items shown as "Other dishes".
+5. A 401 on the menu (the session expired after 5 minutes without activity) re-runs entry once with the same QR code, like a rescan. If the menu still answers 401, the browser is not keeping the cookie and the customer is asked to allow cookies.
+
+## Backend integration
+
+| Topic       | Behavior                                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Base URL    | `NEXT_PUBLIC_API_BASE_URL`, including `/api/v1`.                                                                                  |
+| Credentials | `credentials: 'include'` on every customer request.                                                                             |
+| Writes      | No synchronizer CSRF token (F1-23). The backend checks `Origin`/`Referer` against `STEWARD_CORS_ALLOWED_ORIGINS` and the cookie is `SameSite=Lax`. |
+| Errors      | `{ error: { code, message, details?, request_id? } }`. Users see safe messages; the request ID is shown as a reference.        |
+| Retries     | Reads retry twice on server or network errors; writes never retry.                                                                |
+| CORS        | This app's origin must be in the backend's allow-list. No extra request headers are needed.                                      |
+
+**Hostname topology.** The cookie is host-only and `SameSite=Lax`, set by the API host. A cross-origin `fetch` carries it only when this app and the API are same-site (same registrable domain). Platform default domains on the Public Suffix List make two hosts cross-site. Production hostnames are an open deployment decision (AUTH-OPEN-11); `SameSite=None` is never an option.
+
+## Later slices
+
+S2 (server cart, name-only search), S3 (details, review), S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
