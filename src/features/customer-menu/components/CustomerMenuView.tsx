@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Money } from '@/components/ui/Money';
 import type { CustomerMenu, CustomerMenuItem } from '../schemas';
@@ -7,9 +8,18 @@ export const UNCATEGORIZED_HEADING = 'Other dishes';
 
 /**
  * The customer menu, as returned by the backend: categories in its order, then
- * available uncategorized items. Read-only in S1 (no cart, no search).
+ * available uncategorized items. `renderAction` adds the cart control of each
+ * item (S2); `empty` replaces the default empty state (for a search with no match).
  */
-export function CustomerMenuView({ menu }: { menu: CustomerMenu }) {
+export function CustomerMenuView({
+  menu,
+  renderAction,
+  empty,
+}: {
+  menu: CustomerMenu;
+  renderAction?: (item: CustomerMenuItem) => ReactNode;
+  empty?: ReactNode;
+}) {
   const sections = [
     ...menu.categories.map((category) => ({
       key: category.id,
@@ -23,10 +33,12 @@ export function CustomerMenuView({ menu }: { menu: CustomerMenu }) {
 
   if (sections.length === 0) {
     return (
-      <EmptyState
-        title="The menu isn't available yet"
-        description="Please ask a member of staff for help."
-      />
+      empty ?? (
+        <EmptyState
+          title="The menu isn't available yet"
+          description="Please ask a member of staff for help."
+        />
+      )
     );
   }
 
@@ -42,7 +54,7 @@ export function CustomerMenuView({ menu }: { menu: CustomerMenu }) {
           </h2>
           <ul className="divide-y divide-border">
             {section.items.map((item) => (
-              <MenuItemRow key={item.id} item={item} />
+              <MenuItemRow key={item.id} item={item} action={renderAction?.(item)} />
             ))}
           </ul>
         </section>
@@ -51,7 +63,7 @@ export function CustomerMenuView({ menu }: { menu: CustomerMenu }) {
   );
 }
 
-function MenuItemRow({ item }: { item: CustomerMenuItem }) {
+function MenuItemRow({ item, action }: { item: CustomerMenuItem; action: ReactNode }) {
   return (
     <li className="flex items-start justify-between gap-4 py-4">
       <div className="min-w-0">
@@ -63,9 +75,12 @@ function MenuItemRow({ item }: { item: CustomerMenuItem }) {
           </p>
         ) : null}
       </div>
-      <p className="shrink-0 font-medium text-text">
-        <Money amountMinor={item.basePriceMinor} />
-      </p>
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <p className="font-medium text-text">
+          <Money amountMinor={item.basePriceMinor} />
+        </p>
+        {action}
+      </div>
     </li>
   );
 }

@@ -1,8 +1,9 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  buildCart,
   buildCustomerMenu,
   buildEmptyCustomerMenu,
   buildEnteredSession,
@@ -11,10 +12,11 @@ import {
 } from '@/test/factories/customer';
 import { mswServer } from '@/test/msw/node';
 import { errorResponse } from '@/test/msw/respond';
-import { CustomerEntry } from './CustomerEntry';
-import { CustomerQueryProvider } from './CustomerQueryProvider';
+import { renderCustomerPage } from '@/test/render-customer';
 
 /*
+ * QR entry, the session boundary and the menu page (F-01 S1, S2).
+ *
  * A customer is never navigated anywhere by a failed request, least of all to
  * a sign-in page. The customer app has no restaurant-user redirect at all
  * (`src/test/no-login-redirect.test.ts` proves no source references one);
@@ -32,20 +34,25 @@ function expectNoNavigation() {
   expect(window.location.pathname).toBe(startPath);
 }
 
-type Counters = { entries: string[]; menus: number };
+type Counters = { entries: string[]; menus: number; carts: number };
 
 /**
  * Handlers for one test. The jsdom test environment has no cookie jar for the
  * HttpOnly cookie, so the backend's session behaviour is scripted per test.
+ * Like the backend, every customer endpoint shares one session check: when
+ * `menu` answers 401, so does the cart unless `cart` says otherwise.
  */
 function backend({
   entry = () => HttpResponse.json(buildEnteredSession('1'), { status: 201 }),
   menu = () => HttpResponse.json(buildCustomerMenu()),
+  cart,
 }: {
   entry?: () => Response;
   menu?: () => Response;
+  cart?: () => Response;
 } = {}): Counters {
-  const counters: Counters = { entries: [], menus: 0 };
+  const counters: Counters = { entries: [], menus: 0, carts: 0 };
+  let lastMenuStatus = 200;
   mswServer.use(
     http.post('*/customer/sessions', async ({ request }) => {
       const body = (await request.json()) as { qr_code: string };
@@ -54,18 +61,19 @@ function backend({
     }),
     http.get('*/customer/menu', () => {
       counters.menus += 1;
-      return menu();
+      const response = menu();
+      lastMenuStatus = response.status;
+      return response;
+    }),
+    http.get('*/customer/cart', () => {
+      counters.carts += 1;
+      if (cart) return cart();
+      return lastMenuStatus === 401
+        ? errorResponse(401, 'customer_session_expired', 'Session ended')
+        : HttpResponse.json(buildCart());
     }),
   );
   return counters;
-}
-
-function renderEntry(qrCode: string = MOCK_QR.table1) {
-  return render(
-    <CustomerQueryProvider>
-      <CustomerEntry qrCode={qrCode} />
-    </CustomerQueryProvider>,
-  );
 }
 
 beforeEach(() => {
@@ -73,10 +81,14 @@ beforeEach(() => {
   navigation.replaceState.mockClear();
 });
 
-describe('CustomerEntry', () => {
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('QR entry and the menu', () => {
   it('shows a loading state, then the restaurant, table and menu', async () => {
     const counters = backend();
-    renderEntry();
+    renderCustomerPage();
 
     expect(document.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(
@@ -96,32 +108,36 @@ describe('CustomerEntry', () => {
     expect(counters.menus).toBe(1);
   });
 
-  it('never offers S2+ actions: no cart, search, or add buttons', async () => {
+  it('offers name search and an Add button per dish, and nothing after the cart (S3+)', async () => {
     backend();
-    renderEntry();
+    renderCustomerPage();
     await screen.findByRole('region', { name: 'Mains' });
 
-    expect(screen.queryByRole('button')).toBeNull();
-    expect(screen.queryByRole('searchbox')).toBeNull();
-    expect(screen.queryByRole('textbox')).toBeNull();
-    expect(screen.queryByText(/cart/i)).toBeNull();
+    expect(screen.getByRole('searchbox', { name: 'Search dishes' })).toBeInTheDocument();
+    expect(
+      screen.getAllByRole('button', { name: /^Add / }).map((b) => b.getAttribute('aria-label')),
+    ).toEqual(['Add Dal Makhani', 'Add Paneer Tikka', 'Add Masala Chaas']);
+    // The cart is empty, so there is no summary yet; and no S3+ step exists.
+    expect(screen.queryByRole('region', { name: 'Your cart' })).toBeNull();
+    expect(screen.queryByText(/checkout|pay|mobile|instructions/i)).toBeNull();
   });
 
   it('shows one generic state for an unknown or malformed QR code', async () => {
     const counters = backend({
       entry: () => errorResponse(404, 'not_found', 'The requested resource was not found.'),
     });
-    renderEntry('not-a-qr');
+    renderCustomerPage('menu', 'not-a-qr');
 
     expect(
       await screen.findByRole('heading', { level: 1, name: "We couldn't find this table" }),
     ).toBeInTheDocument();
     expect(counters.menus).toBe(0);
+    expect(counters.carts).toBe(0);
   });
 
   it('shows Table Unavailable for an inactive table', async () => {
     backend({ entry: () => errorResponse(409, 'table_unavailable', 'Unavailable') });
-    renderEntry(MOCK_QR.inactive);
+    renderCustomerPage('menu', MOCK_QR.inactive);
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Table unavailable' }),
@@ -143,7 +159,7 @@ describe('CustomerEntry', () => {
           { status: 409 },
         ),
     });
-    renderEntry(MOCK_QR.table2);
+    renderCustomerPage('menu', MOCK_QR.table2);
 
     expect(
       await screen.findByRole('heading', { level: 1, name: 'Your order is at Table 1' }),
@@ -159,7 +175,7 @@ describe('CustomerEntry', () => {
           { status: 429, headers: { 'Retry-After': '30' } },
         ),
     });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByText(/Try again in 30 seconds/)).toBeInTheDocument();
   });
@@ -172,7 +188,7 @@ describe('CustomerEntry', () => {
           ? errorResponse(500, 'internal_error', 'Internal error', 'req-entry-500')
           : HttpResponse.json(buildEnteredSession('1'), { status: 201 }),
     });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByText("We couldn't open the menu")).toBeInTheDocument();
     expect(screen.getByText('Reference: req-entry-500')).toBeInTheDocument();
@@ -189,7 +205,7 @@ describe('CustomerEntry', () => {
           ? errorResponse(503, 'service_unavailable', 'Unavailable', 'req-menu-503')
           : HttpResponse.json(buildCustomerMenu()),
     });
-    renderEntry();
+    renderCustomerPage();
 
     // Server errors are retried twice with backoff before the error shows.
     expect(
@@ -202,19 +218,20 @@ describe('CustomerEntry', () => {
 
   it('shows an empty state when the restaurant has no available items', async () => {
     backend({ menu: () => HttpResponse.json(buildEmptyCustomerMenu()) });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByText("The menu isn't available yet")).toBeInTheDocument();
+    expect(screen.queryByRole('searchbox')).toBeNull();
   });
 
   it('treats a contract-breaking response as an error, not a menu', async () => {
     backend({ entry: () => HttpResponse.json({ data: {} }, { status: 201 }) });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByText("We couldn't open the menu")).toBeInTheDocument();
   });
 
-  it('re-enters once with the same QR code when the session ended (401), like a rescan', async () => {
+  it('when the session ended (401), says so and re-enters once with the same QR code', async () => {
     let menuCalls = 0;
     const counters = backend({
       menu: () => {
@@ -224,25 +241,47 @@ describe('CustomerEntry', () => {
           : HttpResponse.json(buildCustomerMenu());
       },
     });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByRole('region', { name: 'Mains' })).toBeInTheDocument();
     expect(counters.entries).toEqual([MOCK_QR.table1, MOCK_QR.table1]);
+    // S2: unlike S1's silent recovery, the customer is told the cart was emptied.
+    const notice = screen.getByRole('status', { name: 'Your session ended' });
+    expect(notice).toHaveTextContent(/your cart was emptied/);
+    await userEvent.click(within(notice).getByRole('button', { name: 'OK' }));
+    expect(screen.queryByRole('status', { name: 'Your session ended' })).toBeNull();
     expectNoNavigation();
   });
 
   it('never sends a customer to /login, even when the session cannot be kept', async () => {
     backend({ menu: () => errorResponse(401, 'customer_session_expired', 'Session ended') });
-    renderEntry();
+    renderCustomerPage();
 
     expect(await screen.findByText("We couldn't keep your table session")).toBeInTheDocument();
     expect(screen.getByText(/cookies are allowed/)).toBeInTheDocument();
     await waitFor(() => expectNoNavigation());
   });
 
+  it('shows the entry problem when re-entering after a 401 fails', async () => {
+    let entries = 0;
+    backend({
+      entry: () => {
+        entries += 1;
+        return entries === 1
+          ? HttpResponse.json(buildEnteredSession('1'), { status: 201 })
+          : errorResponse(500, 'internal_error', 'Internal error', 'req-reentry-500');
+      },
+      menu: () => errorResponse(401, 'customer_session_expired', 'Session ended'),
+    });
+    renderCustomerPage();
+
+    expect(await screen.findByText("We couldn't open the menu")).toBeInTheDocument();
+    expect(screen.getByText('Reference: req-reentry-500')).toBeInTheDocument();
+  });
+
   it('stores nothing about the customer session in browser storage', async () => {
     backend();
-    renderEntry();
+    renderCustomerPage();
     await screen.findByRole('region', { name: 'Mains' });
 
     expect(window.localStorage.length).toBe(0);

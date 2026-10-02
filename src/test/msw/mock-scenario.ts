@@ -10,6 +10,10 @@ export const MOCK_SCENARIOS = [
   'empty',
   /** Customer menu: the backend fails with a 500. */
   'server_error',
+  /** Customer cart (S2): Dal Makhani has become unavailable (hidden from the menu, refused by the cart). */
+  'dal_unavailable',
+  /** Customer cart (S2): every cart write is refused with 429 and `Retry-After: 30`. */
+  'cart_rate_limited',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 

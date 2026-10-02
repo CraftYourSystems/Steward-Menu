@@ -23,12 +23,15 @@ Where this document and the contract differ, the contract wins.
 src/
 ├── app/
 │   ├── layout.tsx                 # fonts, global styles, customer query client, mobile container
-│   ├── t/[qrCode]/page.tsx        # R1: QR entry (renders CustomerEntry)
+│   ├── t/[qrCode]/layout.tsx      # R1: the session boundary for every customer page
+│   ├── t/[qrCode]/page.tsx        # the menu with search and cart controls
+│   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2)
 │   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
 │   └── error.tsx                  # last-resort error state
 ├── features/
-│   ├── customer-session/          # POST /customer/sessions, entry problem states, query keys
-│   └── customer-menu/             # GET /customer/menu, menu schema and view
+│   ├── customer-session/          # POST /customer/sessions, session boundary and context, entry problem states, query keys
+│   ├── customer-menu/             # GET /customer/menu, menu schema, view, page, name search
+│   └── customer-cart/             # /customer/cart API, schema, hooks, cart page, quantity control, problems
 ├── lib/
 │   ├── api/request.ts             # fetch with timeout, Zod contract validation
 │   ├── api/errors.ts              # error envelope → ApiError, safe user messages, Retry-After
@@ -45,11 +48,20 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 
 ## S1 flow
 
-1. `/t/[qrCode]` renders `CustomerEntry` in the browser.
+1. Every `/t/[qrCode]` page renders inside `CustomerSessionBoundary` (the route layout), in the browser.
 2. `POST /customer/sessions { qr_code }` creates or resumes the session. The backend sets the cookie; the body carries only the restaurant name, table number and session stage.
 3. Entry problems map from the error `code`, never the message: unknown QR → one generic "We couldn't find this table" (404); inactive table → "Table unavailable" (`409 table_unavailable`); session at another table → "Your order is at Table N" (`409 customer_session_other_table`); rate limited → wait and retry (429, `Retry-After`).
 4. `GET /customer/menu` returns the session restaurant's available items grouped by category, plus uncategorized items shown as "Other dishes".
-5. A 401 on the menu (the session expired after 5 minutes without activity) re-runs entry once with the same QR code, like a rescan. If the menu still answers 401, the browser is not keeping the cookie and the customer is asked to allow cookies.
+5. A 401 on any customer request (the session expired after 5 minutes without activity) re-runs entry once with the same QR code, like a rescan. Since S2 the customer is told the session ended and the cart was emptied (technical design §6). If a request still answers 401 after re-entering, the browser is not keeping the cookie and the customer is asked to allow cookies. A fresh visit after expiry simply starts a new session: nothing answers 401, so there is nothing to explain.
+
+## S2 flow (server-side cart)
+
+1. The cart belongs to the session cookie; the browser only ever sends a dish or line ID and a quantity (`POST /customer/cart/lines`, `PATCH`/`DELETE /customer/cart/lines/{id}`), never a price, restaurant or total.
+2. Every cart endpoint answers with the whole cart: current base prices (no price lock before Review, F1-09), availability per line, and the subtotal and item count of the **available** lines. The UI renders that response as is; nothing is calculated or updated optimistically. Cart controls are disabled while a change is saved, so responses never arrive out of order.
+3. One line per dish; quantity 1 to 20 (TD-10). Decreasing from 1 removes the line. A dish that became unavailable stays in the cart, marked, out of the subtotal; it can be decreased or removed but not increased (`422 item_unavailable`).
+4. Errors map by `code`: `item_unavailable` → explained, menu and cart reloaded; `404` → the line is gone, menu and cart reloaded; `validation_failed` with `cart_line_quantity_max` → the per-dish limit; `429` → wait (`Retry-After` seconds shown, nothing retried automatically); `401` → the session-ended flow above.
+5. Search filters the loaded menu in the browser by **dish name only** (NFKC, collapsed whitespace, case-insensitive substring; F1-27). It sends no request.
+6. No polling, heartbeat or timer-driven request exists (F1-04): only the customer's own actions, a window-focus refetch, and bounded retries of failed reads reach the backend. A Vitest test advances fake timers 10 minutes and asserts zero requests.
 
 ## Backend integration
 
@@ -66,4 +78,4 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 
 ## Later slices
 
-S2 (server cart, name-only search), S3 (details, review), S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
+S3 (details, special instructions, review), S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.

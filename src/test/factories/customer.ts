@@ -67,3 +67,56 @@ export function buildCustomerMenu() {
 export function buildEmptyCustomerMenu() {
   return { data: { categories: [], uncategorized: [] } };
 }
+
+/** The dishes of `buildCustomerMenu`, as the mock backend's catalog. */
+export const MOCK_DISHES = {
+  dal: { id: 'item-dal', name: 'Dal Makhani', priceMinor: 22000 },
+  paneer: { id: 'item-paneer', name: 'Paneer Tikka', priceMinor: 24900 },
+  chaas: { id: 'item-chaas', name: 'Masala Chaas', priceMinor: 6000 },
+} as const;
+
+type Dish = { id: string; name: string; priceMinor: number };
+
+export type WireCartLine = {
+  id: string;
+  menu_item_id: string;
+  name: string;
+  unit_price: { amount_minor: number; currency: 'INR' };
+  quantity: number;
+  line_total: { amount_minor: number; currency: 'INR' };
+  available: boolean;
+};
+
+export function buildCartLine(
+  dish: Dish,
+  quantity: number,
+  { id = `line-${dish.id}`, available = true }: { id?: string; available?: boolean } = {},
+): WireCartLine {
+  return {
+    id,
+    menu_item_id: dish.id,
+    name: dish.name,
+    unit_price: { amount_minor: dish.priceMinor, currency: 'INR' },
+    quantity,
+    line_total: { amount_minor: dish.priceMinor * quantity, currency: 'INR' },
+    available,
+  };
+}
+
+/**
+ * A cart in the backend's wire shape. Like the backend, the subtotal and item
+ * count cover the available lines only.
+ */
+export function buildCart(lines: WireCartLine[] = []) {
+  const orderable = lines.filter((line) => line.available);
+  return {
+    data: {
+      lines,
+      subtotal: {
+        amount_minor: orderable.reduce((sum, line) => sum + line.line_total.amount_minor, 0),
+        currency: 'INR' as const,
+      },
+      item_count: orderable.reduce((sum, line) => sum + line.quantity, 0),
+    },
+  };
+}
