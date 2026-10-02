@@ -14,9 +14,11 @@ import { errorResponse } from '@/test/msw/respond';
 import { recordRequests, renderCustomerPage } from '@/test/render-customer';
 
 /*
- * The S2 cart in the UI, against the same contract-mirroring MSW handlers as
- * the mock API (one cookieless device session, since jsdom keeps no cookies).
- * Individual tests override a handler only to script a backend outcome.
+ * The cart in the UI (S2, S3), against the same contract-mirroring MSW handlers
+ * as the mock API (one cookieless device session, since jsdom keeps no
+ * cookies). Individual tests override a handler only to script a backend
+ * outcome. Since S3 a dish can have several lines, so the menu offers Add and
+ * "N in cart"; each line is changed on the cart page.
  */
 
 beforeEach(() => {
@@ -36,35 +38,59 @@ async function menuLoaded() {
   );
 }
 
+/** The menu row of a dish. */
+function dishRow(name: string): HTMLElement {
+  const row = screen.getByRole('button', { name: `Add ${name}` }).closest('li');
+  if (!row) throw new Error(`no menu row for ${name}`);
+  return row;
+}
+
+async function expectInCart(name: string, count: number) {
+  await waitFor(() => expect(dishRow(name)).toHaveTextContent(`${count} in cart`));
+}
+
 function cartSummary() {
   return screen.getByRole('region', { name: 'Your cart' });
 }
 
 describe('the cart on the menu', () => {
-  it('adds a dish, then shows its quantity control and the server cart summary', async () => {
+  it('adds a dish, then shows how many are in the cart and the server cart summary', async () => {
     renderCustomerPage();
     await menuLoaded();
+    expect(dishRow('Dal Makhani')).not.toHaveTextContent('in cart');
 
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    const control = await screen.findByRole('group', { name: 'Dal Makhani quantity' });
-    expect(control).toHaveTextContent('1');
+    await expectInCart('Dal Makhani', 1);
     expect(cartSummary()).toHaveTextContent('1 item · ₹220.00');
     expect(within(cartSummary()).getByRole('link', { name: 'View cart' })).toHaveAttribute(
       'href',
       '/t/mockQrTable01Active000/cart',
     );
 
-    await userEvent.click(screen.getByRole('button', { name: 'Increase Dal Makhani' }));
-    await waitFor(() => expect(cartSummary()).toHaveTextContent('2 items · ₹440.00'));
+    // Add again adds to the line without instructions.
+    await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
+    await expectInCart('Dal Makhani', 2);
+    expect(cartSummary()).toHaveTextContent('2 items · ₹440.00');
     await userEvent.click(screen.getByRole('button', { name: 'Add Masala Chaas' }));
     await waitFor(() => expect(cartSummary()).toHaveTextContent('3 items · ₹500.00'));
+    // Quantities and lines are changed on the cart page, never on the menu.
+    expect(screen.queryByRole('group')).toBeNull();
+  });
 
-    await userEvent.click(screen.getByRole('button', { name: 'Decrease Dal Makhani' }));
-    await waitFor(() => expect(cartSummary()).toHaveTextContent('2 items · ₹280.00'));
-    // Decreasing from 1 removes the line.
-    await userEvent.click(screen.getByRole('button', { name: 'Decrease Dal Makhani' }));
-    expect(await screen.findByRole('button', { name: 'Add Dal Makhani' })).toBeInTheDocument();
-    expect(cartSummary()).toHaveTextContent('1 item · ₹60.00');
+  it('counts every line of a dish, whatever its instructions', async () => {
+    mswServer.use(
+      http.get('*/customer/cart', () =>
+        HttpResponse.json(
+          buildCart([
+            buildCartLine(MOCK_DISHES.dal, 2, { id: 'line-a' }),
+            buildCartLine(MOCK_DISHES.dal, 3, { id: 'line-b', specialInstructions: 'no onion' }),
+          ]),
+        ),
+      ),
+    );
+    renderCustomerPage();
+    await menuLoaded();
+    await expectInCart('Dal Makhani', 5);
   });
 
   it('shows exactly what the server returns, never its own arithmetic', async () => {
@@ -83,9 +109,7 @@ describe('the cart on the menu', () => {
     await menuLoaded();
 
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    expect(await screen.findByRole('group', { name: 'Dal Makhani quantity' })).toHaveTextContent(
-      '3',
-    );
+    await expectInCart('Dal Makhani', 3);
     expect(cartSummary()).toHaveTextContent('7 items · ₹123.45');
   });
 
@@ -109,7 +133,7 @@ describe('the cart on the menu', () => {
       expect(screen.getByRole('button', { name: 'Add Paneer Tikka' })).toBeDisabled(),
     );
     act(() => release());
-    expect(await screen.findByRole('group', { name: 'Dal Makhani quantity' })).toBeInTheDocument();
+    await expectInCart('Dal Makhani', 1);
     expect(screen.getByRole('button', { name: 'Add Paneer Tikka' })).toBeEnabled();
   });
 
@@ -184,7 +208,7 @@ describe('the cart on the menu', () => {
     renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
 
     endMockDeviceSession(); // 5 idle minutes later, as far as the backend is concerned
     await userEvent.click(screen.getByRole('button', { name: 'Add Masala Chaas' }));
@@ -253,7 +277,7 @@ describe('the cart page', () => {
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
     await userEvent.click(await screen.findByRole('button', { name: 'Add Masala Chaas' }));
-    await screen.findByRole('group', { name: 'Masala Chaas quantity' });
+    await expectInCart('Masala Chaas', 1);
 
     renderCustomerPage('cart');
     const dal = await screen.findByRole('listitem', { name: 'Dal Makhani' });
@@ -352,7 +376,7 @@ describe('the cart page', () => {
     const menu = renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
     menu.unmount();
 
     renderCustomerPage('cart');
@@ -370,7 +394,7 @@ describe('the cart page', () => {
     const menu = renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
     menu.unmount();
 
     endMockDeviceSession();
@@ -386,7 +410,7 @@ describe('cart requests', () => {
     renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
 
     const write = requests.find((r) => r.method === 'POST' && r.path.endsWith('/cart/lines'));
     expect(write?.headers.get('X-CSRF-Token')).toBeNull();
@@ -402,7 +426,7 @@ describe('cart requests', () => {
     renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
     const before = requests.length;
 
     vi.useFakeTimers();
@@ -416,7 +440,7 @@ describe('cart requests', () => {
     renderCustomerPage();
     await menuLoaded();
     await userEvent.click(screen.getByRole('button', { name: 'Add Dal Makhani' }));
-    await screen.findByRole('group', { name: 'Dal Makhani quantity' });
+    await expectInCart('Dal Makhani', 1);
     expect(window.localStorage.length).toBe(0);
     expect(window.sessionStorage.length).toBe(0);
   });

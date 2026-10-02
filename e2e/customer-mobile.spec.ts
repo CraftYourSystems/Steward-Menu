@@ -39,7 +39,7 @@ test('pinch-zoom is never disabled', async ({ page }) => {
 test('the cart page fits the viewport without horizontal scrolling', async ({ page }) => {
   await page.goto(`/t/${MOCK_QR.table1}`);
   await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
-  await expect(page.getByRole('group', { name: 'Dal Makhani quantity' })).toBeVisible();
+  await expect(page.getByText('1 in cart')).toBeVisible();
   await page.goto(`/t/${MOCK_QR.table1}/cart`);
   await expect(page.getByRole('listitem', { name: 'Dal Makhani' })).toBeVisible();
   await expectFitsViewport(page);

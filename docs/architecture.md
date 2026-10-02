@@ -25,13 +25,17 @@ src/
 │   ├── layout.tsx                 # fonts, global styles, customer query client, mobile container
 │   ├── t/[qrCode]/layout.tsx      # R1: the session boundary for every customer page
 │   ├── t/[qrCode]/page.tsx        # the menu with search and cart controls
-│   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2)
+│   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2, S3)
+│   ├── t/[qrCode]/details/page.tsx    # Name + mobile (S3)
+│   ├── t/[qrCode]/checkout/page.tsx   # the review step (S3)
 │   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
 │   └── error.tsx                  # last-resort error state
 ├── features/
 │   ├── customer-session/          # POST /customer/sessions, session boundary and context, entry problem states, query keys
 │   ├── customer-menu/             # GET /customer/menu, menu schema, view, page, name search
-│   └── customer-cart/             # /customer/cart API, schema, hooks, cart page, quantity control, problems
+│   ├── customer-cart/             # /customer/cart API, schema, hooks, cart page, notes, quantity control, problems
+│   ├── customer-details/          # /customer/details API, schema, field-error mapping, details page
+│   └── customer-checkout/         # /customer/checkout API, schema, review problems, review page
 ├── lib/
 │   ├── api/request.ts             # fetch with timeout, Zod contract validation
 │   ├── api/errors.ts              # error envelope → ApiError, safe user messages, Retry-After
@@ -76,6 +80,15 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 
 **Hostname topology.** The cookie is host-only and `SameSite=Lax`, set by the API host. A cross-origin `fetch` carries it only when this app and the API are same-site (same registrable domain). Platform default domains on the Public Suffix List make two hosts cross-site. Production hostnames are an open deployment decision (AUTH-OPEN-11); `SameSite=None` is never an option.
 
+## S3 flow (details, instructions, review)
+
+1. **Instructions.** A cart line is (dish, instructions). The menu's Add adds to the dish's line without instructions and shows "N in cart"; on the cart page each line's quantity and note are changed, and lines of one dish are told apart by their notes. Notes are plain text (React escapes them), at most 200 characters, and never change a price. Giving a line the same note as another line of the dish merges them on the server.
+2. **Details.** `/details` sends Name and mobile exactly as typed; the backend trims, validates and normalizes them (E.164), and field errors come back as codes shown next to each field. No OTP. A reload prefills from `GET /customer/details`.
+3. **Review.** `/checkout` reads `GET /customer/checkout`: an open checkout is shown as returned (details, table, line snapshots, subtotal, the "Tax" row, total). Without one, the page offers **Review order**; only that explicit action calls `POST /customer/checkout/review`. The browser never calculates tax or totals.
+4. **Invalidation.** Every cart change and every details change supersede the open checkout on the server; the app invalidates its checkout query after each, so the next visit to `/checkout` offers Review again.
+5. **Review errors.** `checkout_revalidation_required` sends the customer to `/cart?changed=availability`, where the unavailable lines are marked and Continue is replaced by "Remove unavailable dishes to continue". `cart_empty` goes to the cart, `customer_details_required` to `/details`. `restaurant_configuration_incomplete` and `table_unavailable` show a message asking the customer to talk to staff; no workaround is offered.
+6. **Tax-rate provisioning.** Production tax-rate provisioning remains an open F-08 release blocker. S3 implements the configuration dependency and dev/test fixture path but does not create the production configuration surface.
+
 ## Later slices
 
-S3 (details, special instructions, review), S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
+S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.

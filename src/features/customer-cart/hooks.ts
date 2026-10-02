@@ -9,7 +9,7 @@ import {
   useSessionOutcome,
 } from '@/features/customer-session/session-context';
 import { ApiError } from '@/lib/api/errors';
-import { addCartLine, fetchCart, removeCartLine, setCartLineQuantity } from './api';
+import { addCartLine, fetchCart, removeCartLine, updateCartLine } from './api';
 import { cartProblemFor, type CartProblem } from './cart-problem';
 import type { Cart } from './schemas';
 
@@ -35,6 +35,7 @@ export function useCart() {
 type CartChange =
   | { kind: 'add'; menuItemId: string; quantity: number }
   | { kind: 'set'; lineId: string; quantity: number }
+  | { kind: 'instructions'; lineId: string; specialInstructions: string | null }
   | { kind: 'remove'; lineId: string };
 
 function send(change: CartChange): Promise<Cart> {
@@ -42,7 +43,9 @@ function send(change: CartChange): Promise<Cart> {
     case 'add':
       return addCartLine(change.menuItemId, change.quantity);
     case 'set':
-      return setCartLineQuantity(change.lineId, change.quantity);
+      return updateCartLine(change.lineId, { quantity: change.quantity });
+    case 'instructions':
+      return updateCartLine(change.lineId, { specialInstructions: change.specialInstructions });
     case 'remove':
       return removeCartLine(change.lineId);
   }
@@ -64,6 +67,8 @@ export function useCartChanges() {
     onMutate: () => setProblem(null),
     onSuccess: (cart) => {
       queryClient.setQueryData(customerKeys.cart(qrCode), cart);
+      // Every cart change supersedes the open checkout on the server (S3).
+      void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
       reportSessionWorking();
     },
     onError: (error) => {
@@ -84,6 +89,8 @@ export function useCartChanges() {
     add: (menuItemId: string) => mutation.mutate({ kind: 'add', menuItemId, quantity: 1 }),
     setQuantity: (lineId: string, quantity: number) =>
       mutation.mutate({ kind: 'set', lineId, quantity }),
+    setInstructions: (lineId: string, specialInstructions: string | null) =>
+      mutation.mutate({ kind: 'instructions', lineId, specialInstructions }),
     remove: (lineId: string) => mutation.mutate({ kind: 'remove', lineId }),
     isPending: mutation.isPending,
     problem,

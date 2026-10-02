@@ -85,12 +85,17 @@ export type WireCartLine = {
   quantity: number;
   line_total: { amount_minor: number; currency: 'INR' };
   available: boolean;
+  special_instructions: string | null;
 };
 
 export function buildCartLine(
   dish: Dish,
   quantity: number,
-  { id = `line-${dish.id}`, available = true }: { id?: string; available?: boolean } = {},
+  {
+    id = `line-${dish.id}`,
+    available = true,
+    specialInstructions = null,
+  }: { id?: string; available?: boolean; specialInstructions?: string | null } = {},
 ): WireCartLine {
   return {
     id,
@@ -100,6 +105,7 @@ export function buildCartLine(
     quantity,
     line_total: { amount_minor: dish.priceMinor * quantity, currency: 'INR' },
     available,
+    special_instructions: specialInstructions,
   };
 }
 
@@ -117,6 +123,64 @@ export function buildCart(lines: WireCartLine[] = []) {
         currency: 'INR' as const,
       },
       item_count: orderable.reduce((sum, line) => sum + line.quantity, 0),
+    },
+  };
+}
+
+/** The fixture tax rate of the mock restaurant: 500 basis points (5 %), like the backend seed. */
+export const MOCK_TAX_RATE_BP = 500;
+
+export const MOCK_CUSTOMER = { name: 'Asha Rao', mobile: '+919876543210' } as const;
+
+/** Half-up tax on the subtotal, as the backend calculates it (technical design §10). */
+export function mockTaxMinor(subtotalMinor: number, rateBp: number): number {
+  return Math.floor((subtotalMinor * rateBp + 5000) / 10000);
+}
+
+/** An open checkout in the backend's wire shape (technical design §9), priced like the backend. */
+export function buildCheckout({
+  checkoutId = 'checkout-1',
+  name = MOCK_CUSTOMER.name,
+  mobile = MOCK_CUSTOMER.mobile,
+  tableNumber = '1',
+  lines,
+  rateBp = MOCK_TAX_RATE_BP,
+}: {
+  checkoutId?: string;
+  name?: string;
+  mobile?: string;
+  tableNumber?: string;
+  lines: { dish: Dish; quantity: number; specialInstructions?: string | null }[];
+  rateBp?: number;
+}) {
+  const wireLines = lines.map((line) => ({
+    name: line.dish.name,
+    unit_price: { amount_minor: line.dish.priceMinor, currency: 'INR' as const },
+    quantity: line.quantity,
+    special_instructions: line.specialInstructions ?? null,
+    line_total: { amount_minor: line.dish.priceMinor * line.quantity, currency: 'INR' as const },
+  }));
+  const subtotal = wireLines.reduce((sum, line) => sum + line.line_total.amount_minor, 0);
+  const tax = mockTaxMinor(subtotal, rateBp);
+  const national = mobile.slice(3);
+  return {
+    data: {
+      checkout_id: checkoutId,
+      status: 'open' as const,
+      customer: { name, mobile_display: `+91 ${national.slice(0, 5)} ${national.slice(5)}` },
+      table: { number: tableNumber },
+      lines: wireLines,
+      amounts: {
+        subtotal: { amount_minor: subtotal, currency: 'INR' as const },
+        taxes: [
+          {
+            label: 'Tax',
+            rate_bp: rateBp,
+            amount: { amount_minor: tax, currency: 'INR' as const },
+          },
+        ],
+        total: { amount_minor: subtotal + tax, currency: 'INR' as const },
+      },
     },
   };
 }

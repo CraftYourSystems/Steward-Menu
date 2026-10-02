@@ -30,9 +30,9 @@ test('add, view, change, reload and remove: the real cart persists server-side',
 }) => {
   await openMenu(page);
   await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
-  await expect(page.getByRole('group', { name: 'Dal Makhani quantity' })).toContainText('1');
-  await page.getByRole('button', { name: 'Increase Dal Makhani' }).click();
-  await expect(page.getByRole('group', { name: 'Dal Makhani quantity' })).toContainText('2');
+  await expect(page.getByText('1 in cart')).toBeVisible();
+  await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
+  await expect(page.getByText('2 in cart')).toBeVisible();
   await page.getByRole('button', { name: 'Add Masala Chaas' }).click();
   // Seeded prices: Dal Makhani ₹220.00, Masala Chaas ₹60.00.
   await expect(summary(page)).toContainText('3 items · ₹500.00');

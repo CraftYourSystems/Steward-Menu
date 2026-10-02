@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 /** The most of one dish a cart line holds (F-01 TD-10). The backend enforces it. */
 export const CART_LINE_MAX_QUANTITY = 20;
+/** The longest special instructions after normalization (F-01 TD-16). The backend enforces it. */
+export const SPECIAL_INSTRUCTIONS_MAX_LENGTH = 200;
 
 /*
  * The server-side cart — F-01 technical design §5 (S2). Every cart endpoint
@@ -24,6 +26,7 @@ const CartLineSchema = z
     quantity: z.number().int().min(1).max(CART_LINE_MAX_QUANTITY),
     line_total: MoneySchema,
     available: z.boolean(),
+    special_instructions: z.string().min(1).max(SPECIAL_INSTRUCTIONS_MAX_LENGTH).nullable(),
   })
   .transform((line) => ({
     id: line.id,
@@ -33,6 +36,7 @@ const CartLineSchema = z
     quantity: line.quantity,
     lineTotalMinor: line.line_total.amount_minor,
     available: line.available,
+    specialInstructions: line.special_instructions,
   }));
 export type CartLine = z.output<typeof CartLineSchema>;
 

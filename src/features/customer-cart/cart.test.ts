@@ -20,6 +20,7 @@ describe('CartSchema', () => {
           quantity: 2,
           lineTotalMinor: 44000,
           available: true,
+          specialInstructions: null,
         },
         {
           id: 'line-item-paneer',
@@ -29,6 +30,7 @@ describe('CartSchema', () => {
           quantity: 1,
           lineTotalMinor: 24900,
           available: false,
+          specialInstructions: null,
         },
       ],
       // Unavailable lines are left out by the server, not by the browser.

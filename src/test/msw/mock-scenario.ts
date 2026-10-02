@@ -14,6 +14,10 @@ export const MOCK_SCENARIOS = [
   'dal_unavailable',
   /** Customer cart (S2): every cart write is refused with 429 and `Retry-After: 30`. */
   'cart_rate_limited',
+  /** Review (S3): the restaurant has no tax rate (`restaurant_configuration_incomplete`). */
+  'tax_missing',
+  /** Review (S3): the table was deactivated (`table_unavailable`). */
+  'table_inactive',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 

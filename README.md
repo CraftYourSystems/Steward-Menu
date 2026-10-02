@@ -4,7 +4,9 @@ The customer-facing application of **Steward 1.0**, the restaurant operating sys
 
 **QR → Menu → Cart → Name + Mobile → Checkout → PhonePe → Order status** (F-01 Order Flow).
 
-> **Status: F-01 S2.** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2) are implemented and integrated with FastAPI. Customer details, review, checkout, payment and order status (S3–S6) are not built yet.
+> **Status: F-01 S3.** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2), customer details, special instructions and the order review with backend pricing (S3) are implemented and integrated with FastAPI. Payment, order placement and order status (S4–S6) are not built yet.
+>
+> Production tax-rate provisioning remains an open F-08 release blocker. S3 implements the configuration dependency and dev/test fixture path but does not create the production configuration surface. Until it exists, Review in production shows "This restaurant can't take orders right now".
 
 Steward has three repositories:
 
@@ -22,10 +24,12 @@ Next.js 16 (App Router) · React 19 · TypeScript (strict) · TanStack Query · 
 
 ## Routes
 
-| Route              | What it does                                                                                                                                                                                 |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/t/[qrCode]`      | QR entry: creates or resumes the customer session, then shows the session restaurant's available menu (S1), searchable by dish name, with Add and quantity controls and a cart summary (S2). |
-| `/t/[qrCode]/cart` | The server-side cart (S2): lines at current base prices, quantity changes, removal, and the subtotal of available dishes. Unavailable dishes stay marked until removed.                      |
+| Route                  | What it does                                                                                                                                                                                                                                           |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/t/[qrCode]`          | QR entry: creates or resumes the customer session, then shows the session restaurant's available menu (S1), searchable by dish name, with Add and quantity controls and a cart summary (S2).                                                           |
+| `/t/[qrCode]/cart`     | The server-side cart (S2, S3): lines at current base prices with special instructions (a dish can have several lines), quantity changes, notes, removal, the subtotal of available dishes, and Continue. Unavailable dishes stay marked until removed. |
+| `/t/[qrCode]/details`  | Name + Indian mobile number (S3), validated by the backend; no OTP. Prefilled on reload.                                                                                                                                                               |
+| `/t/[qrCode]/checkout` | The review step (S3): the open checkout with the backend's subtotal, tax and total, or a Review action. Loading the page never creates a checkout. No payment step yet.                                                                                |
 
 Printed QR codes encode `/t/<qrCode>`; the hostname in front of it is configurable and not fixed in code. Every page under `/t/[qrCode]` enters or resumes the session itself, so a direct visit or reload of `/cart` keeps the same session and cart.
 
@@ -79,7 +83,7 @@ pnpm mock:api                                        # http://localhost:8788
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8788 pnpm dev
 ```
 
-The mock serves the same customer contract with MSW handlers (`src/test/msw/handlers/customer.ts`), including the session cookie and a cart per session with the backend's rules. QR codes are in `src/test/factories/customer.ts` (`MOCK_QR`). A `mock_scenario` cookie selects fixtures (`src/test/msw/mock-scenario.ts`): `empty`, `server_error`, `dal_unavailable` (Dal Makhani becomes unavailable) and `cart_rate_limited` (cart writes answer 429).
+The mock serves the same customer contract with MSW handlers (`src/test/msw/handlers/customer.ts`), including the session cookie and a cart per session with the backend's rules. QR codes are in `src/test/factories/customer.ts` (`MOCK_QR`). A `mock_scenario` cookie selects fixtures (`src/test/msw/mock-scenario.ts`): `empty`, `server_error`, `dal_unavailable` (Dal Makhani becomes unavailable), `cart_rate_limited` (cart writes answer 429), `tax_missing` (Review answers `restaurant_configuration_incomplete`) and `table_inactive` (Review answers `table_unavailable`). The mock prices Reviews at 500 basis points, like the backend seed.
 
 ## Commands
 
@@ -107,6 +111,8 @@ pnpm test:e2e:backend
 ```
 
 The specs are skipped without the QR codes. The suite enters the QR code more often than the backend's default QR-entry limit allows per minute from one address (20), so run the local backend with a higher limit for it, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=200` (local configuration only). The 5-minute cart expiry is covered by the backend's FakeClock integration tests, not by E2E.
+
+The seed gives the restaurant the dev/test fixture tax rate (500 basis points), which the review specs expect. One review spec makes a dish unavailable during the flow; no customer API can do that, so it changes the local database with `docker exec … psql` and is skipped unless you also set `E2E_POSTGRES_CONTAINER` (for example `steward-backend-postgres-1`) and `E2E_DATABASE_NAME` (the local database the backend uses). It restores the dish afterwards. Never point these at a shared database.
 
 ## The old prototype
 

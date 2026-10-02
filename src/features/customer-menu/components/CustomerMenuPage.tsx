@@ -8,7 +8,6 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { CartProblemNotice } from '@/features/customer-cart/components/CartProblemNotice';
 import { CartSummary } from '@/features/customer-cart/components/CartSummary';
-import { QuantityControl } from '@/features/customer-cart/components/QuantityControl';
 import { useCart, useCartChanges } from '@/features/customer-cart/hooks';
 import type { CartLine } from '@/features/customer-cart/schemas';
 import { customerKeys } from '@/features/customer-session/query-keys';
@@ -24,8 +23,10 @@ import { filterMenuByName } from '../search';
 import { CustomerMenuView } from './CustomerMenuView';
 
 /**
- * `/t/[qrCode]` (F-01 S1, S2): the session restaurant's menu, searchable by
- * dish name, with Add and quantity controls backed by the server-side cart.
+ * `/t/[qrCode]` (F-01 S1 to S3): the session restaurant's menu, searchable by
+ * dish name. Add puts one more of a dish (without instructions) in the
+ * server-side cart; "N in cart" shows how many the cart holds. Quantities and
+ * instructions of each line are changed on the cart page.
  */
 export function CustomerMenuPage() {
   const { qrCode } = useCustomerSession();
@@ -56,14 +57,17 @@ export function CustomerMenuPage() {
   }
 
   const hasDishes = menu.data.categories.length > 0 || menu.data.uncategorized.length > 0;
-  const lineFor = new Map<string, CartLine>(
-    (cart.data?.lines ?? []).map((line) => [line.menuItemId, line]),
-  );
+  const inCart = quantitiesByDish(cart.data?.lines ?? []);
 
+  // A dish may have several cart lines (different instructions, S3). The menu
+  // adds to the line without instructions; each line is changed on the cart page.
   const renderAction = (item: CustomerMenuItem) => {
-    const line = lineFor.get(item.id);
-    if (!line) {
-      return (
+    const count = inCart.get(item.id) ?? 0;
+    return (
+      <div className="flex items-center gap-3">
+        {count > 0 ? (
+          <span className="text-sm text-text-muted tabular-nums">{count} in cart</span>
+        ) : null}
         <Button
           aria-label={`Add ${item.name}`}
           disabled={changes.isPending}
@@ -71,21 +75,7 @@ export function CustomerMenuPage() {
         >
           Add
         </Button>
-      );
-    }
-    return (
-      <QuantityControl
-        name={item.name}
-        quantity={line.quantity}
-        disabled={changes.isPending}
-        canIncrease={line.available}
-        onDecrease={() =>
-          line.quantity > 1
-            ? changes.setQuantity(line.id, line.quantity - 1)
-            : changes.remove(line.id)
-        }
-        onIncrease={() => changes.add(item.id)}
-      />
+      </div>
     );
   };
 
@@ -122,6 +112,15 @@ export function CustomerMenuPage() {
       ) : null}
     </>
   );
+}
+
+/** How many of each dish the server's cart holds, across its lines (a display count, not a price). */
+function quantitiesByDish(lines: CartLine[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const line of lines) {
+    counts.set(line.menuItemId, (counts.get(line.menuItemId) ?? 0) + line.quantity);
+  }
+  return counts;
 }
 
 function MenuLoading() {

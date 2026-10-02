@@ -23,18 +23,25 @@ async function openMenu(page: Page) {
   await expect(page.getByRole('button', { name: 'Add Dal Makhani' })).toBeEnabled();
 }
 
-/** The cart notice (Next.js also renders an empty `role=alert` route announcer). */
+/** The cart notice (not Next.js's `role=alert` route announcer). */
 function cartAlert(page: Page) {
-  return page.getByRole('alert').filter({ hasText: /\S/ });
+  return page.locator('[role="alert"]:not(#__next-route-announcer__)');
 }
 
 function summary(page: Page) {
   return page.getByRole('region', { name: 'Your cart' });
 }
 
+/** A dish's menu row (the menu shows "N in cart" since S3). */
+function dishRow(page: Page, name: string) {
+  return page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('button', { name: `Add ${name}` }) });
+}
+
 async function addDal(page: Page) {
   await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
-  await expect(page.getByRole('group', { name: 'Dal Makhani quantity' })).toContainText('1');
+  await expect(dishRow(page, 'Dal Makhani')).toContainText('1 in cart');
 }
 
 async function setScenario(context: BrowserContext, scenario: string) {
@@ -132,7 +139,7 @@ test('a dish that became unavailable is marked in the cart and refused on the me
 
   await setScenario(context, 'dal_unavailable');
   // On the open menu, adding more Dal is refused, and the menu is reloaded without it.
-  await page.getByRole('button', { name: 'Increase Dal Makhani' }).click();
+  await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
   await expect(cartAlert(page)).toContainText("isn't available right now");
   await expect(page.getByRole('region', { name: 'Mains' })).toHaveCount(0);
 

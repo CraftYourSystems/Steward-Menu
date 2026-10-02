@@ -12,16 +12,29 @@ export function fetchCart(options: RequestOptions = {}): Promise<Cart> {
   return customerGet('/customer/cart', CartSchema, undefined, options);
 }
 
-/** Adds a dish, or adds to its existing line (one line per dish). */
+/** Adds a dish, or adds to the dish's line with the same instructions (none here). */
 export function addCartLine(menuItemId: string, quantity: number): Promise<Cart> {
   return customerSend('/customer/cart/lines', 'POST', CartSchema, {
     json: { menu_item_id: menuItemId, quantity },
   });
 }
 
-export function setCartLineQuantity(lineId: string, quantity: number): Promise<Cart> {
+/**
+ * Changes a line's quantity and/or special instructions (S3). `null` or blank
+ * instructions clear them; instructions matching another line of the same dish
+ * merge the two lines on the server.
+ */
+export function updateCartLine(
+  lineId: string,
+  change: { quantity?: number; specialInstructions?: string | null },
+): Promise<Cart> {
+  const json: Record<string, unknown> = {};
+  if (change.quantity !== undefined) json.quantity = change.quantity;
+  if (change.specialInstructions !== undefined) {
+    json.special_instructions = change.specialInstructions;
+  }
   return customerSend(`/customer/cart/lines/${encodeURIComponent(lineId)}`, 'PATCH', CartSchema, {
-    json: { quantity },
+    json,
   });
 }
 

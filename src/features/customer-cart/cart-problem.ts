@@ -1,5 +1,5 @@
 import { ApiError, userMessageFor } from '@/lib/api/errors';
-import { CART_LINE_MAX_QUANTITY } from './schemas';
+import { CART_LINE_MAX_QUANTITY, SPECIAL_INSTRUCTIONS_MAX_LENGTH } from './schemas';
 
 /**
  * What a failed cart change means for the customer (F-01 technical design §5,
@@ -12,6 +12,8 @@ export type CartProblem =
   | { kind: 'gone' }
   /** The line would hold more than the cap (TD-10). */
   | { kind: 'too_many' }
+  /** Special instructions longer than the cap after normalization (TD-16). */
+  | { kind: 'instructions_too_long' }
   | { kind: 'rate_limited'; retryAfterSeconds: number | undefined }
   /** The session ended (401): handled by the session boundary. */
   | { kind: 'session_ended' }
@@ -25,10 +27,14 @@ export function cartProblemFor(error: unknown): CartProblem {
     if (error.kind === 'rate_limited') {
       return { kind: 'rate_limited', retryAfterSeconds: error.retryAfterSeconds };
     }
-    const quantityCodes = (error.details?.fields as Record<string, { code?: string }[]> | undefined)
-      ?.quantity;
-    if (quantityCodes?.some((field) => field.code === 'cart_line_quantity_max')) {
+    const fields = error.details?.fields as Record<string, { code?: string }[]> | undefined;
+    if (fields?.quantity?.some((field) => field.code === 'cart_line_quantity_max')) {
       return { kind: 'too_many' };
+    }
+    if (
+      fields?.special_instructions?.some((field) => field.code === 'special_instructions_too_long')
+    ) {
+      return { kind: 'instructions_too_long' };
     }
     return { kind: 'error', message: userMessageFor(error), requestId: error.requestId };
   }
@@ -44,6 +50,8 @@ export function cartProblemMessage(problem: CartProblem): string | null {
       return "That item isn't in your cart any more. We've updated your cart.";
     case 'too_many':
       return `You can order up to ${CART_LINE_MAX_QUANTITY} of one dish.`;
+    case 'instructions_too_long':
+      return `Instructions can be at most ${SPECIAL_INSTRUCTIONS_MAX_LENGTH} characters.`;
     case 'rate_limited':
       return problem.retryAfterSeconds
         ? `Too many changes at once. Please wait ${problem.retryAfterSeconds} seconds and try again.`
