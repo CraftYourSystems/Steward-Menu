@@ -15,6 +15,7 @@ import {
 } from '@/features/customer-session/session-context';
 import { ApiError, userMessageFor } from '@/lib/api/errors';
 import { fetchDetails, saveDetails } from '../api';
+import { isCartLocked } from '@/features/customer-checkout/payment-problem';
 import { detailsProblemFor, type DetailsProblem } from '../details-problem';
 import { nationalNumber, type CustomerDetails } from '../schemas';
 
@@ -71,7 +72,8 @@ export function CustomerDetailsPage() {
 }
 
 function DetailsForm({ saved }: { saved: CustomerDetails }) {
-  const { qrCode, reportSessionEnded, reportSessionWorking } = useCustomerSession();
+  const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
+    useCustomerSession();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [name, setName] = useState(saved.name ?? '');
@@ -91,6 +93,11 @@ function DetailsForm({ saved }: { saved: CustomerDetails }) {
     onError: (error) => {
       if (isUnauthorized(error)) {
         reportSessionEnded();
+        return;
+      }
+      if (isCartLocked(error)) {
+        // Payment is in progress (S4): the session boundary takes the customer there.
+        reportSessionStage('payment');
         return;
       }
       setProblem(detailsProblemFor(error));

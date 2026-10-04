@@ -102,7 +102,7 @@ Playwright runs every spec in two projects: Desktop Chrome and a phone (`Pixel 7
 
 ### Real-backend E2E
 
-Needs FastAPI running with `http://localhost:3320` in `STEWARD_CORS_ALLOWED_ORIGINS`, a database at the migration head with `seed_ordering` data, and:
+Needs FastAPI running with `http://localhost:3320` in `STEWARD_CORS_ALLOWED_ORIGINS`, a database at the migration head with `seed_ordering` data, and (S4) the stand-in payment gateway: `STEWARD_PAYMENT_GATEWAY=stand_in` and `STEWARD_CUSTOMER_APP_URL=http://localhost:3320` (the seed gives the restaurant the stand-in payment configuration). Then:
 
 ```bash
 E2E_API_BASE_URL=http://localhost:8000/api/v1
@@ -111,6 +111,8 @@ pnpm test:e2e:backend
 ```
 
 The specs are skipped without the QR codes. The suite enters the QR code more often than the backend's default QR-entry limit allows per minute from one address (20), so run the local backend with a higher limit for it, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=200` (local configuration only). The 5-minute cart expiry is covered by the backend's FakeClock integration tests, not by E2E.
+
+The payment specs (S4) take about 35 seconds each: the backend asks the stand-in for an outcome only once an attempt is 15 seconds old. Production PhonePe merchant configuration and the PhonePe adapter remain an open F-08 D-11 / Blockers C release blocker. S4 implements the payment flow against the stand-in gateway and does not create the production payment configuration or enable PhonePe.
 
 The seed gives the restaurant the dev/test fixture tax rate (500 basis points), which the review specs expect. One review spec makes a dish unavailable during the flow; no customer API can do that, so it changes the local database with `docker exec … psql` and is skipped unless you also set `E2E_POSTGRES_CONTAINER` (for example `steward-backend-postgres-1`) and `E2E_DATABASE_NAME` (the local database the backend uses). It restores the dish afterwards. Never point these at a shared database.
 

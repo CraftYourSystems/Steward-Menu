@@ -221,15 +221,18 @@ describe('the review page', () => {
     );
   });
 
-  it('has no payment step, no CSRF token, no storage and no idle requests', async () => {
+  it('pays only on request, with no CSRF token, no storage and no idle requests', async () => {
     const requests = recordRequests();
     await readyToReview();
     await openReview();
     await userEvent.click(await screen.findByRole('button', { name: 'Review order' }));
     await screen.findByRole('region', { name: 'Amounts' });
 
-    expect(screen.queryByRole('button', { name: /pay|place|phonepe/i })).toBeNull();
-    expect(screen.queryByText(/phonepe|payment/i)).toBeNull();
+    // S4: one Pay action, which nothing presses on its own; never PhonePe or "place order".
+    expect(screen.getByRole('button', { name: 'Pay' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /place|phonepe/i })).toBeNull();
+    expect(screen.queryByText(/phonepe/i)).toBeNull();
+    expect(requests.filter((r) => r.path.endsWith('/payments'))).toHaveLength(0);
     const reviewRequest = requests.find((r) => r.path.endsWith('/checkout/review'));
     expect(reviewRequest?.headers.get('X-CSRF-Token')).toBeNull();
     expect(window.localStorage.length).toBe(0);
@@ -252,6 +255,8 @@ describe('checkout contract', () => {
     });
     expect(CheckoutSchema.parse(wire)).toEqual({
       checkoutId: 'checkout-1',
+      status: 'open',
+      payment: null,
       customerName: 'Asha Rao',
       mobileDisplay: '+91 98765 43210',
       tableNumber: '1',
@@ -268,9 +273,18 @@ describe('checkout contract', () => {
       taxes: [{ label: 'Tax', amountMinor: 2200 }],
       totalMinor: 46200,
     });
-    expect(
-      CheckoutSchema.safeParse({ data: { ...wire.data, status: 'payment_started' } }).success,
-    ).toBe(false);
+    // S4: a started payment carries its summary; other statuses are not active checkouts.
+    const started = buildCheckout({
+      lines: [{ dish: MOCK_DISHES.dal, quantity: 1 }],
+      attempts: ['failed', 'awaiting_payment'],
+    });
+    expect(CheckoutSchema.parse(started)).toMatchObject({
+      status: 'payment_started',
+      payment: { latestStatus: 'awaiting_payment', attemptsMade: 2, attemptsLimit: 5 },
+    });
+    expect(CheckoutSchema.safeParse({ data: { ...wire.data, status: 'released' } }).success).toBe(
+      false,
+    );
     const usd = structuredClone(wire);
     (usd.data.amounts.total as { currency: string }).currency = 'USD';
     expect(CheckoutSchema.safeParse(usd).success).toBe(false);

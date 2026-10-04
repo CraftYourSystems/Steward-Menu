@@ -19,10 +19,14 @@ export const MOCK_TABLES: Record<string, { number: string; active: boolean }> = 
   [MOCK_QR.inactive]: { number: '3', active: false },
 };
 
-export function buildEnteredSession(tableNumber = '1', restaurantName = MOCK_RESTAURANT_NAME) {
+export function buildEnteredSession(
+  tableNumber = '1',
+  restaurantName = MOCK_RESTAURANT_NAME,
+  stage: 'cart' | 'payment' = 'cart',
+) {
   return {
     data: {
-      session: { stage: 'cart', order_ref: null },
+      session: { stage, order_ref: null },
       restaurant: { name: restaurantName, branding: null },
       table: { number: tableNumber },
     },
@@ -137,7 +141,22 @@ export function mockTaxMinor(subtotalMinor: number, rateBp: number): number {
   return Math.floor((subtotalMinor * rateBp + 5000) / 10000);
 }
 
-/** An open checkout in the backend's wire shape (technical design §9), priced like the backend. */
+export type WireAttemptStatus = 'awaiting_payment' | 'paid' | 'failed' | 'abandoned';
+
+/** The payment summary of a `payment_started` checkout (S4, technical design §14). */
+export function buildPaymentSummary(statuses: WireAttemptStatus[], attemptsLimit = 5) {
+  const latest = statuses.at(-1);
+  return {
+    latest_attempt: latest ? { status: latest } : null,
+    attempts_made: statuses.length,
+    attempts_limit: attemptsLimit,
+  };
+}
+
+/**
+ * A checkout in the backend's wire shape (technical design §9), priced like the
+ * backend: `open`, or `payment_started` with the attempts' statuses (S4).
+ */
 export function buildCheckout({
   checkoutId = 'checkout-1',
   name = MOCK_CUSTOMER.name,
@@ -145,6 +164,7 @@ export function buildCheckout({
   tableNumber = '1',
   lines,
   rateBp = MOCK_TAX_RATE_BP,
+  attempts,
 }: {
   checkoutId?: string;
   name?: string;
@@ -152,6 +172,8 @@ export function buildCheckout({
   tableNumber?: string;
   lines: { dish: Dish; quantity: number; specialInstructions?: string | null }[];
   rateBp?: number;
+  /** Given: the checkout is `payment_started` with these attempts, oldest first. */
+  attempts?: WireAttemptStatus[];
 }) {
   const wireLines = lines.map((line) => ({
     name: line.dish.name,
@@ -166,7 +188,7 @@ export function buildCheckout({
   return {
     data: {
       checkout_id: checkoutId,
-      status: 'open' as const,
+      status: (attempts ? 'payment_started' : 'open') as 'open' | 'payment_started',
       customer: { name, mobile_display: `+91 ${national.slice(0, 5)} ${national.slice(5)}` },
       table: { number: tableNumber },
       lines: wireLines,
@@ -181,6 +203,7 @@ export function buildCheckout({
         ],
         total: { amount_minor: subtotal + tax, currency: 'INR' as const },
       },
+      ...(attempts ? { payment: buildPaymentSummary(attempts) } : {}),
     },
   };
 }

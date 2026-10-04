@@ -18,6 +18,18 @@ export const MOCK_SCENARIOS = [
   'tax_missing',
   /** Review (S3): the table was deactivated (`table_unavailable`). */
   'table_inactive',
+  /** Pay (S4): the gateway cannot start the payment (502); the attempt fails. */
+  'gateway_error',
+  /** Payment return (S4): the next status poll reports the attempt failed. */
+  'attempt_failed',
+  /** Payment (S4): the attempt stays unconfirmed; Pay, retry and release answer `payment_still_confirming`. */
+  'still_confirming',
+  /** Pay (S4): a price changed since Review (`reasons: ["price_changed"]`). */
+  'price_changed',
+  /** Pay (S4): the tax rate changed since Review (`reasons: ["tax_changed"]`). */
+  'tax_changed',
+  /** Pay (S4): the restaurant has no payment configuration (`missing: ["payment"]`). */
+  'payment_config_missing',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
@@ -30,7 +42,18 @@ export function readCookie(request: Request, name: string): string | undefined {
   return undefined;
 }
 
+/*
+ * Vitest has no cookie jar, so a test selects the scenario directly; it is reset
+ * after every test (`resetMockCarts`). Playwright always uses the cookie.
+ */
+let selected: MockScenario | null = null;
+
+export function selectMockScenario(scenario: MockScenario | null) {
+  selected = scenario;
+}
+
 export function resolveMockScenario(request: Request): MockScenario {
+  if (selected) return selected;
   const value = readCookie(request, MOCK_SCENARIO_COOKIE);
   return (MOCK_SCENARIOS as readonly string[]).includes(value ?? '')
     ? (value as MockScenario)

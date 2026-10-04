@@ -27,7 +27,8 @@ src/
 │   ├── t/[qrCode]/page.tsx        # the menu with search and cart controls
 │   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2, S3)
 │   ├── t/[qrCode]/details/page.tsx    # Name + mobile (S3)
-│   ├── t/[qrCode]/checkout/page.tsx   # the review step (S3)
+│   ├── t/[qrCode]/checkout/page.tsx   # the review step (S3) with Pay (S4)
+│   ├── t/[qrCode]/payment/return/page.tsx  # the payment return page (S4)
 │   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
 │   └── error.tsx                  # last-resort error state
 ├── features/
@@ -35,14 +36,16 @@ src/
 │   ├── customer-menu/             # GET /customer/menu, menu schema, view, page, name search
 │   ├── customer-cart/             # /customer/cart API, schema, hooks, cart page, notes, quantity control, problems
 │   ├── customer-details/          # /customer/details API, schema, field-error mapping, details page
-│   └── customer-checkout/         # /customer/checkout API, schema, review problems, review page
+│   └── customer-checkout/         # /customer/checkout API, schema, review problems, review page;
+│                                  #   S4: payment API, payment problems, status polling, return page
 ├── lib/
 │   ├── api/request.ts             # fetch with timeout, Zod contract validation
 │   ├── api/errors.ts              # error envelope → ApiError, safe user messages, Retry-After
 │   ├── api/customer.ts            # customerGet / customerSend: credentials: 'include', no CSRF token
 │   ├── api/query-client.ts        # TanStack Query defaults; no 401 redirect
 │   ├── env.ts                     # NEXT_PUBLIC_API_BASE_URL validation
-│   └── format/money.ts            # paise → INR display
+│   ├── format/money.ts            # paise → INR display
+│   └── navigation.ts              # leaveForPayment: the one full-page navigation to the gateway (S4)
 ├── components/ui/                 # Button, StatePanel, ErrorState, EmptyState, Skeleton, Money
 ├── styles/tokens.css              # Steward brand primitives
 └── test/                          # MSW handlers, factories, mock API, setup (never shipped)
@@ -89,6 +92,15 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 5. **Review errors.** `checkout_revalidation_required` sends the customer to `/cart?changed=availability`, where the unavailable lines are marked and Continue is replaced by "Remove unavailable dishes to continue". `cart_empty` goes to the cart, `customer_details_required` to `/details`. `restaurant_configuration_incomplete` and `table_unavailable` show a message asking the customer to talk to staff; no workaround is offered.
 6. **Tax-rate provisioning.** Production tax-rate provisioning remains an open F-08 release blocker. S3 implements the configuration dependency and dev/test fixture path but does not create the production configuration surface.
 
+## S4 flow (payment initiation and return)
+
+1. **Pay.** On the reviewed order, **Pay** calls `POST /customer/checkout/{id}/payments` with no body (the backend charges the locked reviewed total) and the browser navigates (`leaveForPayment`) to the returned `redirect_url`, which is accepted only as an `http(s)` URL. In development and tests that is the backend's stand-in gateway page (Fail, Cancel, Leave pending); the mock API serves an equivalent mock gateway page.
+2. **Pay refused.** `checkout_revalidation_required` is routed by `details.reasons`: `item_unavailable` → `/cart?changed=availability`; `price_changed`, `tax_changed`, `cart_changed` → Review again with an explanation; `table_unavailable` → the "talk to staff" message. `restaurant_configuration_incomplete` → "this restaurant can't take orders right now". `payment_gateway_unavailable`, `payment_still_confirming` and `payment_retry_limit` hand over to the return page (with an in-memory notice in the query cache, never in storage or the URL).
+3. **Payment stage.** QR entry answers `stage: "payment"` while a payment is in progress. The session boundary then sends every other customer page to `/payment/return`. Any `409 cart_locked` from a cart, details or Review write switches the cached stage to `payment`, which does the same.
+4. **Return page.** It never reads the gateway's query parameters. It reads `GET /customer/checkout`, then, while the latest attempt awaits payment, polls `GET /customer/checkout/{id}/status` at 2 s, growing by half each time, capped at 30 s (the backend asks the gateway once the attempt is 15 s old and never counts polling as activity). States: **Confirming payment…**; **Still confirming your previous payment…** (an unconfirmed attempt blocks retry and release); **Payment not completed** (Retry payment on the same checkout; Review / change order); **We couldn't start the payment** (gateway error); **Review only** when a dish became unavailable or no attempt is left; **No payment in progress**. It never shows a payment as paid: S4 places no order.
+5. **Review / change order** calls `POST /customer/checkout/{id}/release`; the session returns to the cart stage with its lines and the customer goes to the cart (`?changed=availability` when a dish became unavailable).
+6. **Release blocker.** Production PhonePe merchant configuration and the PhonePe adapter remain an open F-08 D-11 / Blockers C release blocker. S4 implements the payment flow against the stand-in gateway and does not create the production payment configuration or enable PhonePe.
+
 ## Later slices
 
-S4/S5 (PhonePe, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
+S5 (verified payment, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.

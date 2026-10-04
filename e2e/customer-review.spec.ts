@@ -96,9 +96,10 @@ test('QR → menu → cart → note → details → review shows the server-pric
   await expect(page.getByRole('region', { name: 'Your details', exact: true })).toContainText(
     '+91 98765 43210',
   );
-  // No payment step exists yet (S4), and nothing is kept in the browser.
-  await expect(page.getByRole('button', { name: /pay|place order|phonepe/i })).toHaveCount(0);
-  await expect(page.getByText(/phonepe|payment/i)).toHaveCount(0);
+  // S4: one Pay action (never PhonePe or "place order"), and nothing kept in the browser.
+  await expect(page.getByRole('button', { name: 'Pay', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /place order|phonepe/i })).toHaveCount(0);
+  await expect(page.getByText(/phonepe/i)).toHaveCount(0);
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
   await expectNoAxeViolations(page); // reviewed order
 });

@@ -16,22 +16,38 @@ import {
   useSessionOutcome,
 } from '@/features/customer-session/session-context';
 import { ApiError, userMessageFor } from '@/lib/api/errors';
-import { fetchCheckout, reviewOrder } from '../api';
+import { leaveForPayment } from '@/lib/navigation';
+import { fetchCheckout, initiatePayment, reviewOrder } from '../api';
+import {
+  CANT_TAKE_ORDERS,
+  paymentProblemFor,
+  rateLimitedMessage,
+  TALK_TO_STAFF,
+  type PaymentProblem,
+} from '../payment-problem';
 import { reviewProblemFor, type ReviewProblem } from '../review-problem';
 import type { Checkout } from '../schemas';
+import type { PaymentNotice } from './PaymentReturnPage';
 
 /**
  * `/t/[qrCode]/checkout` (route map; F-01 S3): the review step. It shows the
  * session's open checkout exactly as the backend priced it: details, table,
  * line snapshots, subtotal, tax and total. Loading the page never creates a
- * checkout; Review runs only when the customer asks for it. There is no
- * payment step yet (S4).
+ * checkout; Review runs only when the customer asks for it.
+ *
+ * **Pay** (S4) asks the backend to start the payment of the reviewed checkout
+ * and sends the browser to the returned gateway URL. The backend first checks
+ * the order against current data: a dish that became unavailable sends the
+ * customer to the cart, a changed price or tax rate back to Review, an inactive
+ * table to staff. The amount is never sent: the backend charges the locked total.
  */
 export function CustomerCheckoutPage() {
-  const { qrCode, reportSessionEnded, reportSessionWorking } = useCustomerSession();
+  const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
+    useCustomerSession();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [problem, setProblem] = useState<ReviewProblem | null>(null);
+  const [payProblem, setPayProblem] = useState<PaymentProblem | null>(null);
   const base = `/t/${encodeURIComponent(qrCode)}`;
 
   const checkout = useQuery({
@@ -47,7 +63,10 @@ export function CustomerCheckoutPage() {
 
   const review = useMutation({
     mutationFn: reviewOrder,
-    onMutate: () => setProblem(null),
+    onMutate: () => {
+      setProblem(null);
+      setPayProblem(null);
+    },
     onSuccess: (result) => {
       queryClient.setQueryData(customerKeys.checkout(qrCode), result);
       reportSessionWorking();
@@ -72,7 +91,61 @@ export function CustomerCheckoutPage() {
         router.push(`${base}/details`);
         return;
       }
+      if (next.kind === 'cart_locked') {
+        reportSessionStage('payment'); // the session boundary takes the customer to payment
+        return;
+      }
       setProblem(next);
+    },
+  });
+
+  /** Payment started and the gateway was involved: the return page takes over. */
+  const toPayment = (notice: PaymentNotice | null) => {
+    if (notice) queryClient.setQueryData(customerKeys.paymentNotice(qrCode), notice);
+    void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
+    reportSessionStage('payment');
+  };
+
+  const pay = useMutation({
+    mutationFn: (checkoutId: string) => initiatePayment(checkoutId),
+    onMutate: () => {
+      setProblem(null);
+      setPayProblem(null);
+    },
+    onSuccess: ({ redirectUrl }) => leaveForPayment(redirectUrl),
+    onError: (error) => {
+      const next = paymentProblemFor(error);
+      switch (next.kind) {
+        case 'session_ended':
+          reportSessionEnded();
+          return;
+        case 'item_unavailable':
+          void queryClient.invalidateQueries({ queryKey: customerKeys.cart(qrCode) });
+          void queryClient.invalidateQueries({ queryKey: customerKeys.menu(qrCode) });
+          void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
+          router.push(`${base}/cart?changed=availability`);
+          return;
+        case 'review_again':
+        case 'table_unavailable':
+          // The backend superseded the checkout: Review is offered again.
+          void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
+          setPayProblem(next);
+          return;
+        case 'gateway_unavailable':
+          toPayment('gateway_error');
+          return;
+        case 'still_confirming':
+          toPayment('still_confirming');
+          return;
+        case 'retry_limit':
+          toPayment('retry_limit');
+          return;
+        case 'cart_locked':
+          toPayment(null);
+          return;
+        default:
+          setPayProblem(next);
+      }
     },
   });
 
@@ -88,6 +161,7 @@ export function CustomerCheckoutPage() {
       </div>
 
       <ReviewProblemNotice problem={problem} />
+      <PayProblemNotice problem={payProblem} />
 
       {checkout.isPending || isUnauthorized(checkout.error) ? (
         <div aria-busy="true" aria-live="polite">
@@ -103,7 +177,12 @@ export function CustomerCheckoutPage() {
           action={<Button onClick={() => void checkout.refetch()}>Try again</Button>}
         />
       ) : checkout.data ? (
-        <ReviewedOrder checkout={checkout.data} base={base} />
+        <ReviewedOrder
+          checkout={checkout.data}
+          base={base}
+          paying={pay.isPending || pay.isSuccess}
+          onPay={(checkoutId) => pay.mutate(checkoutId)}
+        />
       ) : (
         <StatePanel
           title="Ready to review?"
@@ -148,7 +227,49 @@ function ReviewProblemNotice({ problem }: { problem: ReviewProblem | null }) {
   );
 }
 
-function ReviewedOrder({ checkout, base }: { checkout: Checkout; base: string }) {
+function PayProblemNotice({ problem }: { problem: PaymentProblem | null }) {
+  if (!problem) return null;
+  const message = (() => {
+    switch (problem.kind) {
+      case 'review_again':
+        if (problem.reason === 'price_changed') {
+          return 'Some prices changed since you reviewed your order. Please review it again.';
+        }
+        if (problem.reason === 'tax_changed') {
+          return 'The tax rate changed since you reviewed your order. Please review it again.';
+        }
+        return 'Your order changed since you reviewed it. Please review it again.';
+      case 'table_unavailable':
+        return TALK_TO_STAFF;
+      case 'configuration':
+        return CANT_TAKE_ORDERS;
+      case 'rate_limited':
+        return rateLimitedMessage(problem.retryAfterSeconds);
+      case 'error':
+        return problem.message;
+      default:
+        return null;
+    }
+  })();
+  if (!message) return null;
+  return (
+    <div role="alert" className="mb-4 rounded-lg border border-danger bg-danger-subtle px-4 py-3">
+      <p className="text-sm text-text">{message}</p>
+      {problem.kind === 'error' && problem.requestId ? (
+        <p className="mt-1 font-mono text-xs text-text-muted">Reference: {problem.requestId}</p>
+      ) : null}
+    </div>
+  );
+}
+
+type ReviewedOrderProps = {
+  checkout: Checkout;
+  base: string;
+  paying: boolean;
+  onPay: (checkoutId: string) => void;
+};
+
+function ReviewedOrder({ checkout, base, paying, onPay }: ReviewedOrderProps) {
   return (
     <div className="space-y-6">
       <section aria-labelledby="review-customer" className="rounded-lg border border-border p-4">
@@ -222,6 +343,12 @@ function ReviewedOrder({ checkout, base }: { checkout: Checkout; base: string })
           </div>
         </dl>
       </section>
+
+      {checkout.status === 'open' ? (
+        <Button className="w-full" disabled={paying} onClick={() => onPay(checkout.checkoutId)}>
+          {paying ? 'Opening payment…' : 'Pay'}
+        </Button>
+      ) : null}
     </div>
   );
 }

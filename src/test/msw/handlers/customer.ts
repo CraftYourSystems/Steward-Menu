@@ -6,11 +6,13 @@ import {
   buildCustomerMenu,
   buildEmptyCustomerMenu,
   buildEnteredSession,
+  buildPaymentSummary,
   MOCK_DISHES,
   MOCK_TABLES,
   MOCK_TAX_RATE_BP,
+  type WireAttemptStatus,
 } from '@/test/factories/customer';
-import { resolveMockScenario, type MockScenario } from '../mock-scenario';
+import { resolveMockScenario, selectMockScenario, type MockScenario } from '../mock-scenario';
 import { errorResponse } from '../respond';
 
 /*
@@ -26,6 +28,15 @@ import { errorResponse } from '../respond';
  * subtotal; Name + Indian mobile normalized to E.164; Review prices the cart at
  * 500 basis points, half up; every cart or details change and every new Review
  * supersede the open checkout; reading the checkout never creates one.
+ *
+ * Payments (S4) mirror the backend too: Pay revalidates an open checkout, then
+ * starts it (`payment_started`; cart, details and Review answer `cart_locked`);
+ * an awaiting attempt answers Pay with its stored redirect; at most 5 attempts;
+ * a retry re-checks availability only; release needs every attempt settled.
+ * The redirect goes to a mock gateway page on this mock API (Fail, Cancel,
+ * Leave pending) that sends the browser back to the app's return page. The
+ * customer's return changes nothing: only a status poll applies the outcome,
+ * and the mock never reports a payment as paid.
  * Scenarios only select fixtures.
  */
 
@@ -37,11 +48,25 @@ const MAX_NAME = 80;
 
 type MockSession = { qr: string; value: string };
 type MockLine = { id: string; itemId: string; quantity: number; instructions: string | null };
+type MockAttempt = {
+  id: string;
+  status: WireAttemptStatus;
+  /** What the customer chose on the mock gateway page; applied by a status poll. */
+  outcome: 'failed' | 'abandoned' | null;
+  redirectUrl: string | null;
+  returnUrl: string;
+};
 type MockState = {
   lines: MockLine[];
   details: { name: string; mobile: string } | null;
   checkout: ReturnType<typeof buildCheckout> | null;
+  /** S4: the checkout's payment started; the cart is locked. */
+  paying: boolean;
+  attempts: MockAttempt[];
 };
+
+const MAX_ATTEMPTS = 5;
+const attemptsById = new Map<string, MockAttempt>();
 
 const states = new Map<string, MockState>();
 let nextId = 1;
@@ -49,7 +74,7 @@ let nextId = 1;
 function stateOf(session: MockSession): MockState {
   let state = states.get(session.value);
   if (!state) {
-    state = { lines: [], details: null, checkout: null };
+    state = { lines: [], details: null, checkout: null, paying: false, attempts: [] };
     states.set(session.value, state);
   }
   return state;
@@ -78,7 +103,9 @@ export function endMockDeviceSession() {
 
 /** Forgets every mock session state and the cookieless device (tests). */
 export function resetMockCarts() {
+  selectMockScenario(null);
   states.clear();
+  attemptsById.clear();
   nextId = 1;
   cookielessDevice = { enabled: false, session: undefined };
 }
@@ -209,10 +236,38 @@ function onlyKeys(body: unknown, allowed: string[]): body is Record<string, unkn
   );
 }
 
+function cartLocked() {
+  return conflict('cart_locked', "Your order is being paid, so it can't be changed right now.");
+}
+
+/** The checkout as `GET /customer/checkout` returns it: with the payment summary once started. */
+function checkoutView(state: MockState) {
+  if (!state.checkout) return null;
+  if (!state.paying) return state.checkout;
+  return {
+    data: {
+      ...state.checkout.data,
+      status: 'payment_started' as const,
+      payment: buildPaymentSummary(state.attempts.map((attempt) => attempt.status)),
+    },
+  };
+}
+
+function paymentState(state: MockState, status: string) {
+  return {
+    data: {
+      checkout_id: state.checkout?.data.checkout_id ?? '',
+      status,
+      payment: buildPaymentSummary(state.attempts.map((attempt) => attempt.status)),
+    },
+  };
+}
+
 /** A cart write: needs a session, and the `cart_rate_limited` scenario refuses it. */
 function writeGuard(request: Request): MockSession | Response {
   const session = currentSession(request);
   if (!session) return sessionExpired();
+  if (stateOf(session).paying) return cartLocked();
   if (resolveMockScenario(request) === 'cart_rate_limited') {
     return HttpResponse.json(
       {
@@ -254,7 +309,8 @@ export const customerHandlers = [
     // Resuming keeps the same session (and its state); otherwise a new one starts.
     const value = current?.value ?? `${MARKER}${qr}.${nextId++}`;
     if (cookielessDevice.enabled && !current) cookielessDevice.session = { qr, value };
-    return HttpResponse.json(buildEnteredSession(table.number), {
+    const stage = current && stateOf(current).paying ? 'payment' : 'cart';
+    return HttpResponse.json(buildEnteredSession(table.number, undefined, stage), {
       status: current ? 200 : 201,
       // The cookieless Vitest device has no cookie jar, so it gets no cookie.
       headers: cookielessDevice.enabled
@@ -407,6 +463,7 @@ export const customerHandlers = [
   http.put('*/customer/details', async ({ request }) => {
     const session = currentSession(request);
     if (!session) return sessionExpired();
+    if (stateOf(session).paying) return cartLocked();
     const body: unknown = await request.json().catch(() => null);
     if (
       !onlyKeys(body, ['name', 'mobile']) ||
@@ -433,7 +490,7 @@ export const customerHandlers = [
   http.get('*/customer/checkout', ({ request }) => {
     const session = currentSession(request);
     if (!session) return sessionExpired();
-    const checkout = stateOf(session).checkout;
+    const checkout = checkoutView(stateOf(session));
     return checkout ? HttpResponse.json(checkout, { headers: NO_STORE }) : notFound();
   }),
 
@@ -442,6 +499,7 @@ export const customerHandlers = [
     if (!session) return sessionExpired();
     const scenario = resolveMockScenario(request);
     const state = stateOf(session);
+    if (state.paying) return cartLocked();
     if (state.lines.length === 0) return conflict('cart_empty', 'Your cart is empty.');
     if (!state.details) {
       return conflict('customer_details_required', 'Enter your name and mobile number.');
@@ -478,5 +536,148 @@ export const customerHandlers = [
       }),
     });
     return HttpResponse.json(state.checkout, { status: 201, headers: NO_STORE });
+  }),
+
+  http.post('*/customer/checkout/:checkoutId/payments', ({ request, params }) => {
+    const session = currentSession(request);
+    if (!session) return sessionExpired();
+    const scenario = resolveMockScenario(request);
+    const state = stateOf(session);
+    if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
+    const unavailable = [
+      ...new Set(
+        state.lines.filter((line) => !isAvailable(line.itemId, scenario)).map((l) => l.itemId),
+      ),
+    ];
+    const refused = (reasons: string[], ids: string[] = []) =>
+      conflict('checkout_revalidation_required', 'Your order changed.', {
+        unavailable_item_ids: ids,
+        reasons,
+      });
+
+    if (!state.paying) {
+      // First initiation: the price-lock checks (§11); any difference supersedes.
+      const reasons = [
+        ...(scenario === 'table_inactive' ? ['table_unavailable'] : []),
+        ...(unavailable.length > 0 ? ['item_unavailable'] : []),
+        ...(scenario === 'price_changed' ? ['price_changed'] : []),
+        ...(scenario === 'tax_changed' ? ['tax_changed'] : []),
+      ];
+      if (reasons.length > 0) {
+        state.checkout = null;
+        return refused(reasons, unavailable);
+      }
+      if (scenario === 'payment_config_missing') {
+        return conflict(
+          'restaurant_configuration_incomplete',
+          "This restaurant can't take orders.",
+          {
+            missing: ['payment'],
+          },
+        );
+      }
+      state.paying = true;
+    } else {
+      const awaiting = state.attempts.find((attempt) => attempt.status === 'awaiting_payment');
+      if (awaiting) {
+        if (scenario === 'still_confirming' || !awaiting.redirectUrl) {
+          return conflict('payment_still_confirming', 'Still confirming.');
+        }
+        return HttpResponse.json(
+          { data: { redirect_url: awaiting.redirectUrl } },
+          { headers: NO_STORE },
+        );
+      }
+      if (state.attempts.length >= MAX_ATTEMPTS) {
+        return conflict('payment_retry_limit', "This order can't be paid again.");
+      }
+      // A retry re-checks availability only, and changes nothing when refused.
+      if (unavailable.length > 0) return refused(['item_unavailable'], unavailable);
+    }
+
+    const id = `attempt-${nextId++}`;
+    const appOrigin = request.headers.get('origin') ?? 'http://localhost';
+    const attempt: MockAttempt = {
+      id,
+      status: 'awaiting_payment',
+      outcome: null,
+      redirectUrl: null,
+      returnUrl: `${appOrigin}/t/${session.qr}/payment/return?checkout=${state.checkout.data.checkout_id}`,
+    };
+    state.attempts.push(attempt);
+    attemptsById.set(id, attempt);
+    if (scenario === 'gateway_error') {
+      attempt.status = 'failed';
+      return errorResponse(502, 'payment_gateway_unavailable', "We couldn't start the payment.");
+    }
+    attempt.redirectUrl = `${new URL(request.url).origin}/mock-gateway/${id}`;
+    return HttpResponse.json(
+      { data: { redirect_url: attempt.redirectUrl } },
+      { headers: NO_STORE },
+    );
+  }),
+
+  http.get('*/customer/checkout/:checkoutId/status', ({ request, params }) => {
+    const session = currentSession(request);
+    if (!session) return sessionExpired();
+    const state = stateOf(session);
+    if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
+    const awaiting = state.attempts.find((attempt) => attempt.status === 'awaiting_payment');
+    if (awaiting) {
+      // The backend's server-side status query; a success is never applied (D4).
+      const scenario = resolveMockScenario(request);
+      if (scenario === 'attempt_failed') awaiting.status = 'failed';
+      else if (scenario !== 'still_confirming' && awaiting.outcome)
+        awaiting.status = awaiting.outcome;
+    }
+    return HttpResponse.json(paymentState(state, state.paying ? 'payment_started' : 'open'), {
+      headers: NO_STORE,
+    });
+  }),
+
+  http.post('*/customer/checkout/:checkoutId/release', ({ request, params }) => {
+    const session = currentSession(request);
+    if (!session) return sessionExpired();
+    const state = stateOf(session);
+    if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
+    if (!state.paying) return conflict('conflict', 'This order has no payment to cancel.');
+    if (state.attempts.some((attempt) => attempt.status === 'awaiting_payment')) {
+      return conflict('payment_still_confirming', 'Still confirming.');
+    }
+    const released = paymentState(state, 'released');
+    state.paying = false;
+    state.checkout = null;
+    state.attempts = [];
+    return HttpResponse.json(released, { headers: NO_STORE });
+  }),
+
+  // The mock gateway page (the stand-in's role, for the mock API).
+  http.get('*/mock-gateway/:attemptId', ({ params }) => {
+    const attempt = attemptsById.get(String(params.attemptId));
+    if (!attempt) return notFound();
+    const buttons = [
+      ['fail', 'Fail'],
+      ['cancel', 'Cancel'],
+      ['pending', 'Leave pending'],
+    ]
+      .map(
+        ([value, label]) =>
+          `<button type="submit" name="action" value="${value}">${label}</button>`,
+      )
+      .join('');
+    return new HttpResponse(
+      `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Mock payment</title></head>` +
+        `<body><main><h1>Mock payment</h1><form method="post">${buttons}</form></main></body></html>`,
+      { headers: { 'Content-Type': 'text/html; charset=utf-8', ...NO_STORE } },
+    );
+  }),
+
+  http.post('*/mock-gateway/:attemptId', async ({ request, params }) => {
+    const attempt = attemptsById.get(String(params.attemptId));
+    if (!attempt) return notFound();
+    const action = new URLSearchParams(await request.text()).get('action');
+    if (action === 'fail') attempt.outcome = 'failed';
+    else if (action === 'cancel') attempt.outcome = 'abandoned';
+    return new HttpResponse(null, { status: 303, headers: { Location: attempt.returnUrl } });
   }),
 ];

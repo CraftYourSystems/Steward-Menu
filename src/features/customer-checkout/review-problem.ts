@@ -12,6 +12,8 @@ export type ReviewProblem =
   /** The restaurant cannot price orders (no tax rate). Nothing the customer can fix. */
   | { kind: 'configuration' }
   | { kind: 'table_unavailable' }
+  /** Payment is in progress (S4): the order cannot be reviewed again until it is released. */
+  | { kind: 'cart_locked' }
   | { kind: 'rate_limited'; retryAfterSeconds: number | undefined }
   | { kind: 'session_ended' }
   | { kind: 'error'; message: string; requestId: string | undefined };
@@ -35,6 +37,8 @@ export function reviewProblemFor(error: unknown): ReviewProblem {
       return { kind: 'configuration' };
     case 'table_unavailable':
       return { kind: 'table_unavailable' };
+    case 'cart_locked':
+      return { kind: 'cart_locked' };
     default:
       return { kind: 'error', message: userMessageFor(error), requestId: error.requestId };
   }

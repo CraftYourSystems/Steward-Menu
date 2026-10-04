@@ -10,6 +10,7 @@ import {
 } from '@/features/customer-session/session-context';
 import { ApiError } from '@/lib/api/errors';
 import { addCartLine, fetchCart, removeCartLine, updateCartLine } from './api';
+import { isCartLocked } from '@/features/customer-checkout/payment-problem';
 import { cartProblemFor, type CartProblem } from './cart-problem';
 import type { Cart } from './schemas';
 
@@ -58,7 +59,8 @@ function send(change: CartChange): Promise<Cart> {
  * order.
  */
 export function useCartChanges() {
-  const { qrCode, reportSessionEnded, reportSessionWorking } = useCustomerSession();
+  const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
+    useCustomerSession();
   const queryClient = useQueryClient();
   const [problem, setProblem] = useState<CartProblem | null>(null);
 
@@ -74,6 +76,11 @@ export function useCartChanges() {
     onError: (error) => {
       if (isUnauthorized(error)) {
         reportSessionEnded();
+        return;
+      }
+      if (isCartLocked(error)) {
+        // Payment is in progress (S4): the session boundary takes the customer there.
+        reportSessionStage('payment');
         return;
       }
       const next = cartProblemFor(error);

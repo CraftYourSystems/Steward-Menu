@@ -28,11 +28,34 @@ const CheckoutLineSchema = z
   }));
 export type CheckoutLine = z.output<typeof CheckoutLineSchema>;
 
+/*
+ * The payment state of a `payment_started` checkout (S4, technical design §14):
+ * the latest attempt's status and how many of the allowed attempts were made.
+ * Never a gateway reference or redirect URL. S4 never reports `paid`; it is in
+ * the schema because the backend model has it (S5).
+ */
+export const AttemptStatusSchema = z.enum(['awaiting_payment', 'paid', 'failed', 'abandoned']);
+export type AttemptStatus = z.output<typeof AttemptStatusSchema>;
+
+export const PaymentSummarySchema = z
+  .object({
+    latest_attempt: z.object({ status: AttemptStatusSchema }).nullable(),
+    attempts_made: z.number().int().nonnegative(),
+    attempts_limit: z.number().int().positive(),
+  })
+  .transform((payment) => ({
+    latestStatus: payment.latest_attempt?.status ?? null,
+    attemptsMade: payment.attempts_made,
+    attemptsLimit: payment.attempts_limit,
+  }));
+export type PaymentSummary = z.output<typeof PaymentSummarySchema>;
+
 export const CheckoutSchema = z
   .object({
     data: z.object({
       checkout_id: z.string().min(1),
-      status: z.literal('open'),
+      // `payment_started` (S4): payment was initiated; the checkout is immutable.
+      status: z.enum(['open', 'payment_started']),
       customer: z.object({ name: z.string().min(1), mobile_display: z.string().min(1) }),
       table: z.object({ number: z.string().min(1) }),
       lines: z.array(CheckoutLineSchema).min(1),
@@ -44,10 +67,14 @@ export const CheckoutSchema = z
         ),
         total: MoneySchema,
       }),
+      // Present only for a `payment_started` checkout.
+      payment: PaymentSummarySchema.optional(),
     }),
   })
   .transform(({ data }) => ({
     checkoutId: data.checkout_id,
+    status: data.status,
+    payment: data.payment ?? null,
     customerName: data.customer.name,
     mobileDisplay: data.customer.mobile_display,
     tableNumber: data.table.number,
@@ -60,3 +87,30 @@ export const CheckoutSchema = z
     totalMinor: data.amounts.total.amount_minor,
   }));
 export type Checkout = z.output<typeof CheckoutSchema>;
+
+/*
+ * POST /customer/checkout/{id}/payments (S4): where the browser goes to pay.
+ * Only an http(s) URL is ever followed.
+ */
+export const PaymentRedirectSchema = z
+  .object({ data: z.object({ redirect_url: z.url({ protocol: /^https?$/ }) }) })
+  .transform(({ data }) => ({ redirectUrl: data.redirect_url }));
+
+/*
+ * POST /customer/checkout/{id}/release and GET /customer/checkout/{id}/status
+ * (S4): the checkout's status and payment summary.
+ */
+export const CheckoutPaymentStateSchema = z
+  .object({
+    data: z.object({
+      checkout_id: z.string().min(1),
+      status: z.enum(['open', 'superseded', 'payment_started', 'released']),
+      payment: PaymentSummarySchema.nullable(),
+    }),
+  })
+  .transform(({ data }) => ({
+    checkoutId: data.checkout_id,
+    status: data.status,
+    payment: data.payment,
+  }));
+export type CheckoutPaymentState = z.output<typeof CheckoutPaymentStateSchema>;

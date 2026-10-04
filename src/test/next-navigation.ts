@@ -8,14 +8,20 @@ import { vi } from 'vitest';
  */
 export const routerPush = vi.fn<(href: string) => void>();
 let searchParams = new URLSearchParams();
+let pathname = '/';
 
 export function setSearchParams(query: string) {
   searchParams = new URLSearchParams(query);
 }
 
+export function setPathname(path: string) {
+  pathname = path;
+}
+
 export function resetNavigation() {
   routerPush.mockClear();
   searchParams = new URLSearchParams();
+  pathname = '/';
 }
 
 export const nextNavigationMock = {
@@ -28,5 +34,5 @@ export const nextNavigationMock = {
     prefetch: vi.fn(),
   }),
   useSearchParams: () => searchParams,
-  usePathname: () => '/',
+  usePathname: () => pathname,
 };

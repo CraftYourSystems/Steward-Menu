@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -8,7 +9,12 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { enterSession } from '../api';
 import { entryProblemFor } from '../entry-problem';
 import { customerKeys } from '../query-keys';
-import { CustomerSessionContext, type CustomerSessionValue } from '../session-context';
+import type { EnteredSession } from '../schemas';
+import {
+  CustomerSessionContext,
+  type CustomerSessionStage,
+  type CustomerSessionValue,
+} from '../session-context';
 import { EntryProblemState } from './EntryProblemState';
 
 /**
@@ -70,6 +76,10 @@ function reduce(state: SessionState, action: SessionAction): SessionState {
  * design §6). If the next request still answers 401, the browser is not keeping
  * the session cookie and the customer is told to allow cookies. It never
  * redirects to a sign-in page.
+ *
+ * A session in the `payment` stage (S4) belongs on the payment return page:
+ * every other customer page sends it there, because its cart is locked until
+ * the checkout is released (technical design §1, §14).
  */
 export function CustomerSessionBoundary({
   qrCode,
@@ -88,6 +98,15 @@ export function CustomerSessionBoundary({
   });
   const [state, dispatch] = useReducer(reduce, INITIAL);
   const { refetch: refetchSession } = session;
+  const router = useRouter();
+  const pathname = usePathname();
+  const returnPath = `/t/${encodeURIComponent(qrCode)}/payment/return`;
+  const onReturnPage = pathname.endsWith('/payment/return');
+  const awayFromPayment = session.data?.stage === 'payment' && !onReturnPage;
+
+  useEffect(() => {
+    if (awayFromPayment) router.replace(returnPath);
+  }, [awayFromPayment, router, returnPath]);
 
   useEffect(() => {
     if (state.phase !== 'reentering') return;
@@ -109,6 +128,13 @@ export function CustomerSessionBoundary({
 
   const reportSessionEnded = useCallback(() => dispatch({ type: 'session_ended' }), []);
   const reportSessionWorking = useCallback(() => dispatch({ type: 'session_working' }), []);
+  const reportSessionStage = useCallback(
+    (stage: CustomerSessionStage) =>
+      queryClient.setQueryData<EnteredSession>(customerKeys.session(qrCode), (current) =>
+        current ? { ...current, stage } : current,
+      ),
+    [queryClient, qrCode],
+  );
   const retry = () => dispatch({ type: 'retry' });
 
   const { data } = session;
@@ -119,11 +145,13 @@ export function CustomerSessionBoundary({
             qrCode,
             restaurantName: data.restaurantName,
             tableNumber: data.tableNumber,
+            stage: data.stage,
+            reportSessionStage,
             reportSessionEnded,
             reportSessionWorking,
           }
         : null,
-    [qrCode, data, reportSessionEnded, reportSessionWorking],
+    [qrCode, data, reportSessionStage, reportSessionEnded, reportSessionWorking],
   );
 
   if (session.isPending) return <EntryLoading />;
@@ -135,7 +163,7 @@ export function CustomerSessionBoundary({
       />
     );
   }
-  if (!data || !value) return <EntryLoading />;
+  if (!data || !value || awayFromPayment) return <EntryLoading />;
   if (state.phase === 'failed') {
     return <EntryProblemState problem={entryProblemFor(state.error)} onRetry={retry} />;
   }

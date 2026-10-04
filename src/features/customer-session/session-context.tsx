@@ -3,10 +3,19 @@
 import { createContext, useContext, useEffect } from 'react';
 import { ApiError } from '@/lib/api/errors';
 
+export type CustomerSessionStage = 'cart' | 'payment';
+
 export type CustomerSessionValue = {
   qrCode: string;
   restaurantName: string;
   tableNumber: string;
+  /**
+   * `payment` while a payment is in progress (S4): the cart is locked and the
+   * customer belongs on the payment return page.
+   */
+  stage: CustomerSessionStage;
+  /** The backend moved the session to another stage (payment started, checkout released). */
+  reportSessionStage: (stage: CustomerSessionStage) => void;
   /**
    * A customer request answered 401: the session ended (5 minutes without
    * activity, F1-02). The boundary explains it and re-enters with the same QR

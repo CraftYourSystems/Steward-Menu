@@ -71,7 +71,9 @@ test('QR → menu → cart → note → details → review, priced by the server
   await expect(page.getByRole('region', { name: 'Your details', exact: true })).toContainText(
     '+91 98765 43210',
   );
-  await expect(page.getByRole('button', { name: /pay|place order|phonepe/i })).toHaveCount(0);
+  // S4: one Pay action; nothing is paid until the customer presses it.
+  await expect(page.getByRole('button', { name: 'Pay', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: /place order|phonepe/i })).toHaveCount(0);
 
   // The open checkout survives a reload; so do the details.
   await page.reload();

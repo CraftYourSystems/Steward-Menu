@@ -44,3 +44,18 @@ test('the cart page fits the viewport without horizontal scrolling', async ({ pa
   await expect(page.getByRole('listitem', { name: 'Dal Makhani' })).toBeVisible();
   await expectFitsViewport(page);
 });
+
+test('the payment page fits the viewport without horizontal scrolling', async ({ page }) => {
+  await page.goto(`/t/${MOCK_QR.table1}`);
+  await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
+  await expect(page.getByText('1 in cart')).toBeVisible();
+  await page.goto(`/t/${MOCK_QR.table1}/details`);
+  await page.getByRole('textbox', { name: 'Name' }).fill('Asha Rao');
+  await page.getByRole('textbox', { name: 'Mobile number' }).fill('9876543210');
+  await page.getByRole('button', { name: 'Continue to review' }).click();
+  await page.getByRole('button', { name: 'Review order' }).click();
+  await page.getByRole('button', { name: 'Pay' }).click();
+  await page.getByRole('button', { name: 'Fail' }).click();
+  await expect(page.getByRole('heading', { name: 'Payment not completed' })).toBeVisible();
+  await expectFitsViewport(page);
+});
