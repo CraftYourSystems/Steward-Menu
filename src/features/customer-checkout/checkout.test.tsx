@@ -257,6 +257,7 @@ describe('checkout contract', () => {
       checkoutId: 'checkout-1',
       status: 'open',
       payment: null,
+      order: null,
       customerName: 'Asha Rao',
       mobileDisplay: '+91 98765 43210',
       tableNumber: '1',

@@ -7,9 +7,13 @@ import { z } from 'zod';
 export const EnteredSessionSchema = z
   .object({
     data: z.object({
-      // `payment` (S4): payment was initiated, so the customer resumes at the
-      // payment return page, not the cart (technical design §1, §14).
-      session: z.object({ stage: z.enum(['cart', 'payment']), order_ref: z.null() }),
+      // `payment` (S4): payment was initiated; `placed` / `payment_issue` (S5): the
+      // order was placed, or the payment could not be placed (F1-22). In each case
+      // the customer resumes at the payment return page, not the cart (§1, §14).
+      session: z.object({
+        stage: z.enum(['cart', 'payment', 'placed', 'payment_issue']),
+        order_ref: z.string().min(1).nullable(),
+      }),
       restaurant: z.object({
         name: z.string().min(1),
         // F8-BCD-5 is not provided by the backend yet: safe defaults apply.

@@ -52,7 +52,7 @@ type MockAttempt = {
   id: string;
   status: WireAttemptStatus;
   /** What the customer chose on the mock gateway page; applied by a status poll. */
-  outcome: 'failed' | 'abandoned' | null;
+  outcome: 'failed' | 'abandoned' | 'success' | null;
   redirectUrl: string | null;
   returnUrl: string;
 };
@@ -63,7 +63,14 @@ type MockState = {
   /** S4: the checkout's payment started; the cart is locked. */
   paying: boolean;
   attempts: MockAttempt[];
+  /** S5: what the verified payment did. */
+  placement:
+    | { status: 'placed'; orderId: string; tokenNumber: string; placedAt: string }
+    | { status: 'paid_not_placed' }
+    | null;
 };
+
+let nextToken = 1;
 
 const MAX_ATTEMPTS = 5;
 const attemptsById = new Map<string, MockAttempt>();
@@ -74,7 +81,14 @@ let nextId = 1;
 function stateOf(session: MockSession): MockState {
   let state = states.get(session.value);
   if (!state) {
-    state = { lines: [], details: null, checkout: null, paying: false, attempts: [] };
+    state = {
+      lines: [],
+      details: null,
+      checkout: null,
+      paying: false,
+      attempts: [],
+      placement: null,
+    };
     states.set(session.value, state);
   }
   return state;
@@ -104,6 +118,7 @@ export function endMockDeviceSession() {
 /** Forgets every mock session state and the cookieless device (tests). */
 export function resetMockCarts() {
   selectMockScenario(null);
+  nextToken = 1;
   states.clear();
   attemptsById.clear();
   nextId = 1;
@@ -240,15 +255,50 @@ function cartLocked() {
   return conflict('cart_locked', "Your order is being paid, so it can't be changed right now.");
 }
 
+function orderAlreadyPlaced() {
+  return conflict('order_already_placed', 'Your order has already been placed.');
+}
+
+/** After payment (S5): the placed order, or a paid-not-placed lock. */
+function lockedAfterPayment(state: MockState): Response | null {
+  if (state.placement?.status === 'placed') return orderAlreadyPlaced();
+  if (state.placement?.status === 'paid_not_placed' || state.paying) return cartLocked();
+  return null;
+}
+
+/**
+ * The backend's confirmation of a verified success (S5): Paid, then Placed with
+ * the next daily token, or paid-not-placed when a dish became unavailable.
+ */
+function confirmSuccess(state: MockState, attempt: MockAttempt, scenario: MockScenario) {
+  if (attempt.status !== 'awaiting_payment') return;
+  attempt.status = 'paid';
+  state.paying = false;
+  const unavailable = state.lines.some((line) => !isAvailable(line.itemId, scenario));
+  state.placement =
+    scenario === 'paid_not_placed' || unavailable
+      ? { status: 'paid_not_placed' }
+      : {
+          status: 'placed',
+          orderId: `order-${nextId++}`,
+          tokenNumber: String(nextToken++),
+          placedAt: new Date().toISOString(),
+        };
+}
+
 /** The checkout as `GET /customer/checkout` returns it: with the payment summary once started. */
 function checkoutView(state: MockState) {
   if (!state.checkout) return null;
-  if (!state.paying) return state.checkout;
+  if (!state.paying && !state.placement) return state.checkout;
+  const placement = state.placement;
   return {
     data: {
       ...state.checkout.data,
-      status: 'payment_started' as const,
+      status: placement?.status ?? ('payment_started' as const),
       payment: buildPaymentSummary(state.attempts.map((attempt) => attempt.status)),
+      ...(placement?.status === 'placed'
+        ? { order: { token_number: placement.tokenNumber, placed_at: placement.placedAt } }
+        : {}),
     },
   };
 }
@@ -267,7 +317,8 @@ function paymentState(state: MockState, status: string) {
 function writeGuard(request: Request): MockSession | Response {
   const session = currentSession(request);
   if (!session) return sessionExpired();
-  if (stateOf(session).paying) return cartLocked();
+  const locked = lockedAfterPayment(stateOf(session));
+  if (locked) return locked;
   if (resolveMockScenario(request) === 'cart_rate_limited') {
     return HttpResponse.json(
       {
@@ -309,8 +360,17 @@ export const customerHandlers = [
     // Resuming keeps the same session (and its state); otherwise a new one starts.
     const value = current?.value ?? `${MARKER}${qr}.${nextId++}`;
     if (cookielessDevice.enabled && !current) cookielessDevice.session = { qr, value };
-    const stage = current && stateOf(current).paying ? 'payment' : 'cart';
-    return HttpResponse.json(buildEnteredSession(table.number, undefined, stage), {
+    const placement = current ? stateOf(current).placement : null;
+    const stage =
+      placement?.status === 'placed'
+        ? 'placed'
+        : placement?.status === 'paid_not_placed'
+          ? 'payment_issue'
+          : current && stateOf(current).paying
+            ? 'payment'
+            : 'cart';
+    const orderRef = placement?.status === 'placed' ? placement.orderId : null;
+    return HttpResponse.json(buildEnteredSession(table.number, undefined, stage, orderRef), {
       status: current ? 200 : 201,
       // The cookieless Vitest device has no cookie jar, so it gets no cookie.
       headers: cookielessDevice.enabled
@@ -463,7 +523,8 @@ export const customerHandlers = [
   http.put('*/customer/details', async ({ request }) => {
     const session = currentSession(request);
     if (!session) return sessionExpired();
-    if (stateOf(session).paying) return cartLocked();
+    const locked = lockedAfterPayment(stateOf(session));
+    if (locked) return locked;
     const body: unknown = await request.json().catch(() => null);
     if (
       !onlyKeys(body, ['name', 'mobile']) ||
@@ -499,7 +560,8 @@ export const customerHandlers = [
     if (!session) return sessionExpired();
     const scenario = resolveMockScenario(request);
     const state = stateOf(session);
-    if (state.paying) return cartLocked();
+    const locked = lockedAfterPayment(state);
+    if (locked) return locked;
     if (state.lines.length === 0) return conflict('cart_empty', 'Your cart is empty.');
     if (!state.details) {
       return conflict('customer_details_required', 'Enter your name and mobile number.');
@@ -544,6 +606,8 @@ export const customerHandlers = [
     const scenario = resolveMockScenario(request);
     const state = stateOf(session);
     if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
+    if (state.placement?.status === 'placed') return orderAlreadyPlaced();
+    if (state.placement?.status === 'paid_not_placed') return cartLocked();
     const unavailable = [
       ...new Set(
         state.lines.filter((line) => !isAvailable(line.itemId, scenario)).map((l) => l.itemId),
@@ -624,13 +688,20 @@ export const customerHandlers = [
     if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
     const awaiting = state.attempts.find((attempt) => attempt.status === 'awaiting_payment');
     if (awaiting) {
-      // The backend's server-side status query; a success is never applied (D4).
+      // The backend's server-side status query (S5: a success is confirmed).
       const scenario = resolveMockScenario(request);
+      const outcome = awaiting.outcome;
       if (scenario === 'attempt_failed') awaiting.status = 'failed';
-      else if (scenario !== 'still_confirming' && awaiting.outcome)
-        awaiting.status = awaiting.outcome;
+      else if (scenario === 'still_confirming' || outcome === null) {
+        // nothing to learn yet
+      } else if (outcome === 'success') {
+        confirmSuccess(state, awaiting, scenario); // the missed webhook, recovered
+      } else {
+        awaiting.status = outcome;
+      }
     }
-    return HttpResponse.json(paymentState(state, state.paying ? 'payment_started' : 'open'), {
+    const status = state.placement?.status ?? (state.paying ? 'payment_started' : 'open');
+    return HttpResponse.json(paymentState(state, status), {
       headers: NO_STORE,
     });
   }),
@@ -640,7 +711,9 @@ export const customerHandlers = [
     if (!session) return sessionExpired();
     const state = stateOf(session);
     if (!state.checkout || state.checkout.data.checkout_id !== params.checkoutId) return notFound();
-    if (!state.paying) return conflict('conflict', 'This order has no payment to cancel.');
+    if (!state.paying || state.placement) {
+      return conflict('conflict', 'This order has no payment to cancel.');
+    }
     if (state.attempts.some((attempt) => attempt.status === 'awaiting_payment')) {
       return conflict('payment_still_confirming', 'Still confirming.');
     }
@@ -656,6 +729,8 @@ export const customerHandlers = [
     const attempt = attemptsById.get(String(params.attemptId));
     if (!attempt) return notFound();
     const buttons = [
+      ['pay', 'Pay successfully'],
+      ['pay_no_webhook', 'Pay, no webhook'],
       ['fail', 'Fail'],
       ['cancel', 'Cancel'],
       ['pending', 'Leave pending'],
@@ -676,6 +751,12 @@ export const customerHandlers = [
     const attempt = attemptsById.get(String(params.attemptId));
     if (!attempt) return notFound();
     const action = new URLSearchParams(await request.text()).get('action');
+    if (action === 'pay' || action === 'pay_no_webhook') attempt.outcome = 'success';
+    if (action === 'pay') {
+      // The signed webhook, delivered before the customer returns (S5 P2).
+      const owner = [...states.values()].find((state) => state.attempts.includes(attempt));
+      if (owner) confirmSuccess(owner, attempt, resolveMockScenario(request));
+    }
     if (action === 'fail') attempt.outcome = 'failed';
     else if (action === 'cancel') attempt.outcome = 'abandoned';
     return new HttpResponse(null, { status: 303, headers: { Location: attempt.returnUrl } });

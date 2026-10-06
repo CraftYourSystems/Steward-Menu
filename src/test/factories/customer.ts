@@ -22,11 +22,12 @@ export const MOCK_TABLES: Record<string, { number: string; active: boolean }> = 
 export function buildEnteredSession(
   tableNumber = '1',
   restaurantName = MOCK_RESTAURANT_NAME,
-  stage: 'cart' | 'payment' = 'cart',
+  stage: 'cart' | 'payment' | 'placed' | 'payment_issue' = 'cart',
+  orderRef: string | null = null,
 ) {
   return {
     data: {
-      session: { stage, order_ref: null },
+      session: { stage, order_ref: orderRef },
       restaurant: { name: restaurantName, branding: null },
       table: { number: tableNumber },
     },
@@ -165,6 +166,7 @@ export function buildCheckout({
   lines,
   rateBp = MOCK_TAX_RATE_BP,
   attempts,
+  outcome,
 }: {
   checkoutId?: string;
   name?: string;
@@ -174,6 +176,9 @@ export function buildCheckout({
   rateBp?: number;
   /** Given: the checkout is `payment_started` with these attempts, oldest first. */
   attempts?: WireAttemptStatus[];
+  /** S5: the verified payment's outcome, with the placed order's token and time. */
+  outcome?:
+    { status: 'placed'; tokenNumber: string; placedAt: string } | { status: 'paid_not_placed' };
 }) {
   const wireLines = lines.map((line) => ({
     name: line.dish.name,
@@ -188,7 +193,8 @@ export function buildCheckout({
   return {
     data: {
       checkout_id: checkoutId,
-      status: (attempts ? 'payment_started' : 'open') as 'open' | 'payment_started',
+      status: (outcome?.status ?? (attempts ? 'payment_started' : 'open')) as
+        'open' | 'payment_started' | 'placed' | 'paid_not_placed',
       customer: { name, mobile_display: `+91 ${national.slice(0, 5)} ${national.slice(5)}` },
       table: { number: tableNumber },
       lines: wireLines,
@@ -204,6 +210,9 @@ export function buildCheckout({
         total: { amount_minor: subtotal + tax, currency: 'INR' as const },
       },
       ...(attempts ? { payment: buildPaymentSummary(attempts) } : {}),
+      ...(outcome?.status === 'placed'
+        ? { order: { token_number: outcome.tokenNumber, placed_at: outcome.placedAt } }
+        : {}),
     },
   };
 }

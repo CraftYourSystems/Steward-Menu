@@ -55,7 +55,8 @@ export const CheckoutSchema = z
     data: z.object({
       checkout_id: z.string().min(1),
       // `payment_started` (S4): payment was initiated; the checkout is immutable.
-      status: z.enum(['open', 'payment_started']),
+      // `placed` / `paid_not_placed` (S5): the verified payment's outcome.
+      status: z.enum(['open', 'payment_started', 'placed', 'paid_not_placed']),
       customer: z.object({ name: z.string().min(1), mobile_display: z.string().min(1) }),
       table: z.object({ number: z.string().min(1) }),
       lines: z.array(CheckoutLineSchema).min(1),
@@ -67,14 +68,20 @@ export const CheckoutSchema = z
         ),
         total: MoneySchema,
       }),
-      // Present only for a `payment_started` checkout.
+      // Present once payment started.
       payment: PaymentSummarySchema.optional(),
+      // S5 (P1): present only for a `placed` checkout. The token is a display
+      // reference, never a credential (F1-15).
+      order: z.object({ token_number: z.string().min(1), placed_at: z.iso.datetime() }).optional(),
     }),
   })
   .transform(({ data }) => ({
     checkoutId: data.checkout_id,
     status: data.status,
     payment: data.payment ?? null,
+    order: data.order
+      ? { tokenNumber: data.order.token_number, placedAt: data.order.placed_at }
+      : null,
     customerName: data.customer.name,
     mobileDisplay: data.customer.mobile_display,
     tableNumber: data.table.number,
@@ -104,7 +111,14 @@ export const CheckoutPaymentStateSchema = z
   .object({
     data: z.object({
       checkout_id: z.string().min(1),
-      status: z.enum(['open', 'superseded', 'payment_started', 'released']),
+      status: z.enum([
+        'open',
+        'superseded',
+        'payment_started',
+        'released',
+        'placed',
+        'paid_not_placed',
+      ]),
       payment: PaymentSummarySchema.nullable(),
     }),
   })

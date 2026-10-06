@@ -3,15 +3,16 @@
 import { createContext, useContext, useEffect } from 'react';
 import { ApiError } from '@/lib/api/errors';
 
-export type CustomerSessionStage = 'cart' | 'payment';
+export type CustomerSessionStage = 'cart' | 'payment' | 'placed' | 'payment_issue';
 
 export type CustomerSessionValue = {
   qrCode: string;
   restaurantName: string;
   tableNumber: string;
   /**
-   * `payment` while a payment is in progress (S4): the cart is locked and the
-   * customer belongs on the payment return page.
+   * `payment` while a payment is in progress (S4), `placed` / `payment_issue`
+   * after a verified payment (S5): the cart is locked and the customer belongs on
+   * the payment return page.
    */
   stage: CustomerSessionStage;
   /** The backend moved the session to another stage (payment started, checkout released). */

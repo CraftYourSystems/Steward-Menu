@@ -15,7 +15,7 @@ import {
 } from '@/features/customer-session/session-context';
 import { ApiError, userMessageFor } from '@/lib/api/errors';
 import { fetchDetails, saveDetails } from '../api';
-import { isCartLocked } from '@/features/customer-checkout/payment-problem';
+import { isCartLocked, isOrderAlreadyPlaced } from '@/features/customer-checkout/payment-problem';
 import { detailsProblemFor, type DetailsProblem } from '../details-problem';
 import { nationalNumber, type CustomerDetails } from '../schemas';
 
@@ -98,6 +98,11 @@ function DetailsForm({ saved }: { saved: CustomerDetails }) {
       if (isCartLocked(error)) {
         // Payment is in progress (S4): the session boundary takes the customer there.
         reportSessionStage('payment');
+        return;
+      }
+      if (isOrderAlreadyPlaced(error)) {
+        // The order was placed (S5): the boundary takes the customer to its confirmation.
+        reportSessionStage('placed');
         return;
       }
       setProblem(detailsProblemFor(error));

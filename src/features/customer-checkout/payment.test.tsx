@@ -298,6 +298,19 @@ describe('the payment return page', () => {
     expect(polls()).toBe(3); // polling stops once nothing awaits
   });
 
+  it('mounts fresh buttons when the state changes, so none animates between variants', async () => {
+    const checkoutId = await reviewed();
+    const gateway = await paid(checkoutId);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await openReturnPage();
+    const before = await screen.findByRole('button', { name: 'Go back to payment' });
+    await choose(gateway, 'fail');
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    const after = await screen.findByRole('button', { name: 'Retry payment' });
+    expect(after).not.toBe(before);
+    expect(before.isConnected).toBe(false);
+  });
+
   it('caps the polling interval at 30 seconds', async () => {
     paymentBackend(['awaiting_payment']);
     const requests = recordRequests();

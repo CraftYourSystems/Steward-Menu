@@ -21,9 +21,15 @@ describe('EnteredSessionSchema', () => {
     );
     expect(
       EnteredSessionSchema.safeParse({
-        data: { ...base.data, session: { stage: 'placed', order_ref: 'o1' } },
+        data: { ...base.data, session: { stage: 'ended', order_ref: null } },
       }).success,
     ).toBe(false);
+    // S5: a placed session resumes with its order reference.
+    expect(
+      EnteredSessionSchema.parse({
+        data: { ...base.data, session: { stage: 'placed', order_ref: 'o1' } },
+      }).stage,
+    ).toBe('placed');
   });
 });
 

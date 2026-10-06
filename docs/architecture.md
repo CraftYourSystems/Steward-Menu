@@ -28,7 +28,7 @@ src/
 │   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2, S3)
 │   ├── t/[qrCode]/details/page.tsx    # Name + mobile (S3)
 │   ├── t/[qrCode]/checkout/page.tsx   # the review step (S3) with Pay (S4)
-│   ├── t/[qrCode]/payment/return/page.tsx  # the payment return page (S4)
+│   ├── t/[qrCode]/payment/return/page.tsx  # the payment return page (S4); order placed / paid-not-placed (S5)
 │   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
 │   └── error.tsx                  # last-resort error state
 ├── features/
@@ -101,6 +101,14 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 5. **Review / change order** calls `POST /customer/checkout/{id}/release`; the session returns to the cart stage with its lines and the customer goes to the cart (`?changed=availability` when a dish became unavailable).
 6. **Release blocker.** Production PhonePe merchant configuration and the PhonePe adapter remain an open F-08 D-11 / Blockers C release blocker. S4 implements the payment flow against the stand-in gateway and does not create the production payment configuration or enable PhonePe.
 
+## S5 flow (verified payment → order placed)
+
+1. **Outcome from the backend only.** After a verified payment the backend reports `placed` (with `order: { token_number, placed_at }`) or `paid_not_placed` on `GET /customer/checkout`. The return page polls as in S4 until the checkout leaves `payment_started`; with the stand-in's **Pay successfully** the signed webhook has usually placed the order before the customer is back, and with **Pay, no webhook** the backend's status query finds it after about 15 seconds.
+2. **Order placed (P1).** Shown in place on `/payment/return`: the order token (labelled for screen readers), table, items with notes, total paid and placement time, exactly as returned. There is **no** `/orders/[orderRef]` page or link yet: the order page, order access and live status are S6.
+3. **Paid but not placed (F1-22).** The refund notice: payment received, the order could not be placed because a dish became unavailable, the restaurant handles the refund. No order, no token, no retry.
+4. **Session after placement.** QR entry answers `stage: "placed"` (with `order_ref`) or `"payment_issue"`; the session boundary keeps such sessions on `/payment/return`, so a same-table rescan resumes the confirmation. A write answered `409 order_already_placed` (or `cart_locked` for a payment issue) switches the cached stage and takes the customer there.
+5. **Mock API.** The mock gateway page adds **Pay successfully** (placed at once, like the signed webhook) and **Pay, no webhook** (placed on the next status poll); the `paid_not_placed` scenario makes a success end paid-not-placed.
+
 ## Later slices
 
-S5 (verified payment, placement), S6 (order status, customer WebSocket) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
+S6 (order page, order-access link, customer WebSocket, status-change SMS) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.

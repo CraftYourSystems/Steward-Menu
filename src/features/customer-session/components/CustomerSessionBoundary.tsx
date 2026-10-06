@@ -77,9 +77,10 @@ function reduce(state: SessionState, action: SessionAction): SessionState {
  * the session cookie and the customer is told to allow cookies. It never
  * redirects to a sign-in page.
  *
- * A session in the `payment` stage (S4) belongs on the payment return page:
- * every other customer page sends it there, because its cart is locked until
- * the checkout is released (technical design §1, §14).
+ * A session in the `payment` stage (S4), or `placed` / `payment_issue` (S5),
+ * belongs on the payment return page: every other customer page sends it
+ * there, because its cart is locked (technical design §1, §14). A placed
+ * session resumes its order confirmation there (F1-32).
  */
 export function CustomerSessionBoundary({
   qrCode,
@@ -102,7 +103,8 @@ export function CustomerSessionBoundary({
   const pathname = usePathname();
   const returnPath = `/t/${encodeURIComponent(qrCode)}/payment/return`;
   const onReturnPage = pathname.endsWith('/payment/return');
-  const awayFromPayment = session.data?.stage === 'payment' && !onReturnPage;
+  const stage = session.data?.stage;
+  const awayFromPayment = stage !== undefined && stage !== 'cart' && !onReturnPage;
 
   useEffect(() => {
     if (awayFromPayment) router.replace(returnPath);

@@ -21,6 +21,8 @@ export type PaymentProblem =
   | { kind: 'gateway_unavailable' }
   /** Payment is in progress, so the cart cannot change. */
   | { kind: 'cart_locked' }
+  /** This session already placed its one order (S5, F1-21). */
+  | { kind: 'order_already_placed' }
   /** The checkout is not in a state that allows this (for example already released). */
   | { kind: 'conflict' }
   | { kind: 'rate_limited'; retryAfterSeconds: number | undefined }
@@ -64,6 +66,8 @@ export function paymentProblemFor(error: unknown): PaymentProblem {
       return { kind: 'gateway_unavailable' };
     case 'cart_locked':
       return { kind: 'cart_locked' };
+    case 'order_already_placed':
+      return { kind: 'order_already_placed' };
     case 'conflict':
       return { kind: 'conflict' };
     default:
@@ -74,6 +78,11 @@ export function paymentProblemFor(error: unknown): PaymentProblem {
 /** A 409 `cart_locked` from any cart, details or Review write (S4, F1-05). */
 export function isCartLocked(error: unknown): boolean {
   return error instanceof ApiError && error.code === 'cart_locked';
+}
+
+/** A 409 `order_already_placed`: the session placed its one order (S5, F1-21). */
+export function isOrderAlreadyPlaced(error: unknown): boolean {
+  return error instanceof ApiError && error.code === 'order_already_placed';
 }
 
 export const TALK_TO_STAFF =

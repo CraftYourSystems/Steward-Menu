@@ -10,7 +10,7 @@ import {
 } from '@/features/customer-session/session-context';
 import { ApiError } from '@/lib/api/errors';
 import { addCartLine, fetchCart, removeCartLine, updateCartLine } from './api';
-import { isCartLocked } from '@/features/customer-checkout/payment-problem';
+import { isCartLocked, isOrderAlreadyPlaced } from '@/features/customer-checkout/payment-problem';
 import { cartProblemFor, type CartProblem } from './cart-problem';
 import type { Cart } from './schemas';
 
@@ -81,6 +81,11 @@ export function useCartChanges() {
       if (isCartLocked(error)) {
         // Payment is in progress (S4): the session boundary takes the customer there.
         reportSessionStage('payment');
+        return;
+      }
+      if (isOrderAlreadyPlaced(error)) {
+        // The order was placed (S5): the boundary takes the customer to its confirmation.
+        reportSessionStage('placed');
         return;
       }
       const next = cartProblemFor(error);

@@ -95,6 +95,10 @@ export function CustomerCheckoutPage() {
         reportSessionStage('payment'); // the session boundary takes the customer to payment
         return;
       }
+      if (next.kind === 'order_already_placed') {
+        reportSessionStage('placed'); // ... and to the order confirmation (S5)
+        return;
+      }
       setProblem(next);
     },
   });
@@ -142,6 +146,10 @@ export function CustomerCheckoutPage() {
           return;
         case 'cart_locked':
           toPayment(null);
+          return;
+        case 'order_already_placed':
+          void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
+          reportSessionStage('placed');
           return;
         default:
           setPayProblem(next);

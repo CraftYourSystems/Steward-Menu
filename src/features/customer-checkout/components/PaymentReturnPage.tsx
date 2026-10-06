@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
@@ -54,6 +54,12 @@ export type PaymentNotice =
  * not completed (failed or abandoned: Retry payment, or Review / change order);
  * gateway error; and Review only, when a dish became unavailable or no attempt
  * is left.
+ *
+ * After a verified payment (S5) the backend reports the outcome: **Order
+ * placed**, shown in place with the order token, table, items and total (P1;
+ * the order page itself is S6), or **paid but not placed** (F1-22): the
+ * refund notice, with no order and no token. A same-table rescan of a placed
+ * session lands here and shows the same confirmation (F1-32).
  */
 export function PaymentReturnPage() {
   const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
@@ -78,11 +84,19 @@ export function PaymentReturnPage() {
   });
   useSessionOutcome(checkout);
 
-  const paying = checkout.data?.status === 'payment_started' ? checkout.data : null;
+  const current = checkout.data ?? null;
+  const paying = current?.status === 'payment_started' ? current : null;
   const latest = paying?.payment?.latestStatus ?? null;
-  // `paid` cannot happen in S4; until S5 it is shown as still being confirmed.
+  // A Paid attempt on a checkout still `payment_started` is mid-confirmation.
   const awaiting =
     paying !== null && (latest === null || latest === 'awaiting_payment' || latest === 'paid');
+
+  // Keep the session boundary's stage in step with the backend's outcome (S5).
+  const outcome = current?.status;
+  useEffect(() => {
+    if (outcome === 'placed') reportSessionStage('placed');
+    else if (outcome === 'paid_not_placed') reportSessionStage('payment_issue');
+  }, [outcome, reportSessionStage]);
 
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
@@ -178,6 +192,10 @@ export function PaymentReturnPage() {
           requestId={checkout.error instanceof ApiError ? checkout.error.requestId : undefined}
           action={<Button onClick={() => void checkout.refetch()}>Try again</Button>}
         />
+      ) : current?.status === 'placed' && current.order ? (
+        <OrderPlaced checkout={current} />
+      ) : current?.status === 'paid_not_placed' ? (
+        <PaidNotPlaced />
       ) : !paying ? (
         <NoPayment base={base} reviewed={checkout.data !== null} />
       ) : (
@@ -191,6 +209,85 @@ export function PaymentReturnPage() {
         />
       )}
     </section>
+  );
+}
+
+const PLACED_TIME = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
+
+/**
+ * The placed order, in place (S5, P1): what the backend placed, from the locked
+ * checkout. Nothing is calculated here, and nothing links to an order page yet
+ * (S6).
+ */
+function OrderPlaced({ checkout }: { checkout: Checkout }) {
+  const order = checkout.order!;
+  return (
+    <section
+      role="status"
+      aria-labelledby="order-placed-title"
+      className="space-y-5 rounded-lg border border-border p-5"
+    >
+      <div className="text-center">
+        <h3 id="order-placed-title" className="text-lg font-semibold text-text">
+          Order placed
+        </h3>
+        <p className="mt-3 text-sm text-text-muted">Your token</p>
+        <p
+          className="text-4xl font-semibold text-text tabular-nums"
+          aria-label={`Token ${order.tokenNumber}`}
+        >
+          {order.tokenNumber}
+        </p>
+        <p className="mt-2 text-sm text-text-muted">
+          Table {checkout.tableNumber} · Placed at{' '}
+          <time dateTime={order.placedAt}>{PLACED_TIME.format(new Date(order.placedAt))}</time>
+        </p>
+      </div>
+      <section aria-labelledby="placed-items">
+        <h4 id="placed-items" className="text-sm font-semibold text-text">
+          Your order
+        </h4>
+        <ul className="mt-2 divide-y divide-border">
+          {checkout.lines.map((line, index) => (
+            <li key={index} className="flex items-start justify-between gap-4 py-2">
+              <div className="min-w-0">
+                <p className="break-words text-text">
+                  {line.quantity} × {line.name}
+                </p>
+                {line.specialInstructions ? (
+                  <p className="text-sm break-words text-text-muted">
+                    Note: {line.specialInstructions}
+                  </p>
+                ) : null}
+              </div>
+              <p className="shrink-0 text-text">
+                <Money amountMinor={line.lineTotalMinor} />
+              </p>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 flex justify-between border-t border-border pt-2 font-semibold text-text">
+          <span>Total paid</span>
+          <Money amountMinor={checkout.totalMinor} />
+        </p>
+      </section>
+    </section>
+  );
+}
+
+/** Paid but not placed (F1-22, technical design §14): the refund notice. No order, no token. */
+function PaidNotPlaced() {
+  return (
+    <StatePanel
+      role="alert"
+      title="Payment received, but your order could not be placed"
+      description={
+        <p>
+          A dish in your order became unavailable before it could be placed. The restaurant will
+          handle your refund. Please ask a member of staff if you need help.
+        </p>
+      }
+    />
   );
 }
 
@@ -270,7 +367,9 @@ function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: 
   if (awaiting) {
     const still = notice === 'still_confirming';
     return (
-      <div className="space-y-4">
+      // A key per state: React mounts fresh elements, so no button animates
+      // between states (a mid-transition colour once failed axe contrast).
+      <div key="confirming" className="space-y-4">
         <StatePanel
           role="status"
           title={still ? 'Still confirming your previous payment…' : 'Confirming payment…'}
@@ -310,7 +409,7 @@ function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: 
   }
   const gatewayError = notice === 'gateway_error';
   return (
-    <div className="space-y-4">
+    <div key={gatewayError ? 'gateway-error' : 'not-completed'} className="space-y-4">
       <StatePanel
         role="alert"
         tone={gatewayError ? 'danger' : 'neutral'}

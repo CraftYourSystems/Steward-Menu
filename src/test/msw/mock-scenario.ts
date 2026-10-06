@@ -30,6 +30,8 @@ export const MOCK_SCENARIOS = [
   'tax_changed',
   /** Pay (S4): the restaurant has no payment configuration (`missing: ["payment"]`). */
   'payment_config_missing',
+  /** Placement (S5): a dish became unavailable before the verified payment placed the order. */
+  'paid_not_placed',
 ] as const;
 export type MockScenario = (typeof MOCK_SCENARIOS)[number];
 
