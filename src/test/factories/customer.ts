@@ -178,7 +178,8 @@ export function buildCheckout({
   attempts?: WireAttemptStatus[];
   /** S5: the verified payment's outcome, with the placed order's token and time. */
   outcome?:
-    { status: 'placed'; tokenNumber: string; placedAt: string } | { status: 'paid_not_placed' };
+    | { status: 'placed'; orderRef: string; tokenNumber: string; placedAt: string }
+    | { status: 'paid_not_placed' };
 }) {
   const wireLines = lines.map((line) => ({
     name: line.dish.name,
@@ -211,7 +212,13 @@ export function buildCheckout({
       },
       ...(attempts ? { payment: buildPaymentSummary(attempts) } : {}),
       ...(outcome?.status === 'placed'
-        ? { order: { token_number: outcome.tokenNumber, placed_at: outcome.placedAt } }
+        ? {
+            order: {
+              order_ref: outcome.orderRef,
+              token_number: outcome.tokenNumber,
+              placed_at: outcome.placedAt,
+            },
+          }
         : {}),
     },
   };

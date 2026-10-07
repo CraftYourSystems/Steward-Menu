@@ -60,7 +60,7 @@ test('the payment page fits the viewport without horizontal scrolling', async ({
   await expectFitsViewport(page);
 });
 
-test('the order confirmation fits the viewport without horizontal scrolling', async ({ page }) => {
+test('the order page fits the viewport without horizontal scrolling', async ({ page }) => {
   await page.goto('/t/' + MOCK_QR.table1);
   await page.getByRole('button', { name: 'Add Dal Makhani' }).click();
   await expect(page.getByText('1 in cart')).toBeVisible();
@@ -71,6 +71,6 @@ test('the order confirmation fits the viewport without horizontal scrolling', as
   await page.getByRole('button', { name: 'Review order' }).click();
   await page.getByRole('button', { name: 'Pay', exact: true }).click();
   await page.getByRole('button', { name: 'Pay successfully' }).click();
-  await expect(page.getByRole('status', { name: 'Order placed' })).toBeVisible();
+  await expect(page.getByRole('status', { name: 'Current status' })).toBeVisible();
   await expectFitsViewport(page);
 });

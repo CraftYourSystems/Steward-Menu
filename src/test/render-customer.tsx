@@ -4,6 +4,7 @@ import { CustomerCheckoutPage } from '@/features/customer-checkout/components/Cu
 import { PaymentReturnPage } from '@/features/customer-checkout/components/PaymentReturnPage';
 import { CustomerDetailsPage } from '@/features/customer-details/components/CustomerDetailsPage';
 import { CustomerMenuPage } from '@/features/customer-menu/components/CustomerMenuPage';
+import { CustomerOrderPage } from '@/features/customer-order/components/CustomerOrderPage';
 import { CustomerQueryProvider } from '@/features/customer-session/components/CustomerQueryProvider';
 import { CustomerSessionBoundary } from '@/features/customer-session/components/CustomerSessionBoundary';
 import { MOCK_QR } from './factories/customer';
@@ -34,6 +35,24 @@ export function renderCustomerPage(page: CustomerPage = 'menu', qrCode: string =
   return render(
     <CustomerQueryProvider>
       <CustomerSessionBoundary qrCode={qrCode}>{PAGES[page]}</CustomerSessionBoundary>
+    </CustomerQueryProvider>,
+  );
+}
+
+/**
+ * Renders the order page (S6) as its route does: outside the session boundary.
+ * `fragment` is the URL fragment an SMS link carries (`#k=…`).
+ */
+export function renderOrderPage(
+  orderRef: string,
+  { fragment = '', qrCode = MOCK_QR.table1 }: { fragment?: string; qrCode?: string } = {},
+) {
+  const path = `/t/${qrCode}/orders/${orderRef}`;
+  setPathname(path);
+  window.history.replaceState(null, '', `${path}${fragment}`);
+  return render(
+    <CustomerQueryProvider>
+      <CustomerOrderPage qrCode={qrCode} orderRef={orderRef} />
     </CustomerQueryProvider>,
   );
 }

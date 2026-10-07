@@ -9,6 +9,7 @@ describe('EnteredSessionSchema', () => {
   it('parses the entry response without any token', () => {
     expect(EnteredSessionSchema.parse(buildEnteredSession('7', 'Taqila Bar'))).toEqual({
       stage: 'cart',
+      orderRef: null,
       restaurantName: 'Taqila Bar',
       tableNumber: '7',
     });

@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash, randomBytes } from 'node:crypto';
 
 /*
  * Local-only test support for the real-backend suite: a few specs change menu
@@ -78,6 +79,69 @@ export function paidNotPlacedRecord(qrCode: string) {
         `SELECT count(*) FROM notification_outbox n JOIN orders o ON o.id = n.order_id ` +
           `WHERE o.checkout_id = ${checkout}`,
       ),
+    ),
+  };
+}
+
+function checkUuid(value: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) {
+    throw new Error('unexpected fixture value');
+  }
+}
+
+/** The restaurant of a seeded QR code (S6: the transition command needs it). */
+export function restaurantIdOf(qrCode: string): string {
+  checkQr(qrCode);
+  return runSql(`SELECT restaurant_id FROM restaurant_tables WHERE qr_code = '${qrCode}'`);
+}
+
+/**
+ * S6: an order-access link exactly like the placement and status SMS carry
+ * (`issue_access_link`): a 256-bit secret of which only the SHA-256 is stored,
+ * valid 7 days. Returns the secret for the `#k=` fragment. The SMS bodies
+ * themselves are cleared once dispatched, so the suite mints its own link.
+ */
+export function mintOrderLink(orderRef: string): string {
+  checkUuid(orderRef);
+  const secret = randomBytes(32).toString('base64url');
+  const digest = createHash('sha256').update(secret, 'ascii').digest('hex');
+  runSql(
+    `INSERT INTO order_access_links (id, order_id, secret_hash, created_at, expires_at) ` +
+      `VALUES (gen_random_uuid(), '${orderRef}', decode('${digest}', 'hex'), now(), ` +
+      `now() + interval '7 days')`,
+  );
+  return secret;
+}
+
+/** S6: every link and grant of the order expires, as after 7 days. */
+export function expireOrderAccess(orderRef: string): void {
+  checkUuid(orderRef);
+  for (const table of ['order_access_links', 'order_access_grants']) {
+    runSql(
+      `UPDATE ${table} SET created_at = now() - interval '2 minutes', ` +
+        `expires_at = now() - interval '1 minute' WHERE order_id = '${orderRef}'`,
+    );
+  }
+}
+
+/** Read-only (S6): what the lifecycle recorded for the order. */
+export function orderLifecycleRecord(orderRef: string) {
+  checkUuid(orderRef);
+  return {
+    status: runSql(`SELECT status FROM orders WHERE id = '${orderRef}'`),
+    history: runSql(
+      `SELECT string_agg(state, ',' ORDER BY occurred_at) ` +
+        `FROM order_state_history WHERE order_id = '${orderRef}'`,
+    ),
+    statusSms: Number(
+      runSql(
+        `SELECT count(*) FROM notification_outbox WHERE order_id = '${orderRef}' ` +
+          `AND kind = 'order_status_sms'`,
+      ),
+    ),
+    sessionEndReason: runSql(
+      `SELECT coalesce(string_agg(end_reason, ','), '') FROM customer_sessions ` +
+        `WHERE order_id = '${orderRef}'`,
     ),
   };
 }

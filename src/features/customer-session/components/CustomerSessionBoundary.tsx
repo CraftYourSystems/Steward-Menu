@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'rea
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { orderPagePath } from '@/features/customer-order/paths';
 import { enterSession } from '../api';
 import { entryProblemFor } from '../entry-problem';
 import { customerKeys } from '../query-keys';
@@ -77,10 +78,11 @@ function reduce(state: SessionState, action: SessionAction): SessionState {
  * the session cookie and the customer is told to allow cookies. It never
  * redirects to a sign-in page.
  *
- * A session in the `payment` stage (S4), or `placed` / `payment_issue` (S5),
- * belongs on the payment return page: every other customer page sends it
- * there, because its cart is locked (technical design §1, §14). A placed
- * session resumes its order confirmation there (F1-32).
+ * A session in the `payment` stage (S4) or `payment_issue` (S5) belongs on the
+ * payment return page: every other customer page sends it there, because its
+ * cart is locked (technical design §1, §14). A `placed` session belongs on its
+ * order page (S6), so a same-table rescan resumes the order (F1-32); once the
+ * order is Completed the session has ended and a rescan starts afresh (F1-37).
  */
 export function CustomerSessionBoundary({
   qrCode,
@@ -104,11 +106,17 @@ export function CustomerSessionBoundary({
   const returnPath = `/t/${encodeURIComponent(qrCode)}/payment/return`;
   const onReturnPage = pathname.endsWith('/payment/return');
   const stage = session.data?.stage;
-  const awayFromPayment = stage !== undefined && stage !== 'cart' && !onReturnPage;
+  const orderRef = session.data?.orderRef ?? null;
+  const redirectTo =
+    stage === 'placed' && orderRef
+      ? orderPagePath(qrCode, orderRef)
+      : stage !== undefined && stage !== 'cart' && !onReturnPage
+        ? returnPath
+        : null;
 
   useEffect(() => {
-    if (awayFromPayment) router.replace(returnPath);
-  }, [awayFromPayment, router, returnPath]);
+    if (redirectTo) router.replace(redirectTo);
+  }, [redirectTo, router]);
 
   useEffect(() => {
     if (state.phase !== 'reentering') return;
@@ -165,7 +173,7 @@ export function CustomerSessionBoundary({
       />
     );
   }
-  if (!data || !value || awayFromPayment) return <EntryLoading />;
+  if (!data || !value || redirectTo) return <EntryLoading />;
   if (state.phase === 'failed') {
     return <EntryProblemState problem={entryProblemFor(state.error)} onRetry={retry} />;
   }

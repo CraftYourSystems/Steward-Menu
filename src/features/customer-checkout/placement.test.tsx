@@ -14,14 +14,15 @@ vi.mock('@/lib/navigation', () => ({ leaveForPayment: vi.fn() }));
 
 /*
  * Verified payment → order placement (F-01 S5) on the customer side, against
- * the contract-mirroring mock backend: the in-place Order placed confirmation
- * (P1), the missed-webhook recovery, paid-but-not-placed (F1-22), and the
- * session after placement. The page never links to an order page (S6).
+ * the contract-mirroring mock backend: a placed order goes on to its order page
+ * (S6), the missed-webhook recovery, paid-but-not-placed (F1-22), and the
+ * session after placement.
  */
 
 const API = 'http://api.test';
 const BASE = `/t/${MOCK_QR.table1}`;
 const RETURN = `${BASE}/payment/return`;
+const ORDER_PAGE = new RegExp(`^${BASE}/orders/[0-9a-f-]{36}$`);
 
 beforeEach(() => {
   useCookielessMockDevice();
@@ -71,48 +72,41 @@ async function openReturnPage() {
   await screen.findByRole('heading', { name: 'Payment' });
 }
 
-function confirmation() {
-  return screen.findByRole('status', { name: 'Order placed' });
+/** Where the customer was sent last: the placed order's page. */
+function sentToOrderPage() {
+  return waitFor(() =>
+    expect(routerPush.mock.calls.flat().some((href) => ORDER_PAGE.test(href))).toBe(true),
+  );
 }
 
-describe('Order placed (P1)', () => {
-  it('shows the token, table, items and total in place, with no order page link', async () => {
+describe('Order placed (P1, S6)', () => {
+  it('the return page takes a placed order to its order page', async () => {
     await choose(await paying(), 'pay'); // the signed webhook places the order
-    await openReturnPage();
+    renderCustomerPage('payment'); // the gateway's return, already placed
 
-    const placed = await confirmation();
-    expect(within(placed).getByLabelText('Token 1')).toHaveTextContent('1');
-    expect(placed).toHaveTextContent('Table 1');
-    expect(placed).toHaveTextContent(/Placed at/);
-    const items = within(placed).getAllByRole('listitem');
-    expect(items[0]).toHaveTextContent('2 × Dal Makhani');
-    expect(items[0]).toHaveTextContent('Note: less oil');
-    expect(items[0]).toHaveTextContent('₹440.00');
-    expect(items[1]).toHaveTextContent('1 × Masala Chaas');
-    expect(placed).toHaveTextContent('Total paid₹525.00');
-    expect(screen.queryByRole('link', { name: /order/i })).toBeNull();
-    expect(document.querySelector('a[href*="/orders/"]')).toBeNull();
-    expect(routerPush.mock.calls.flat().some((href) => href.includes('/orders/'))).toBe(false);
+    await sentToOrderPage();
+    expect(screen.queryByText(/payment not completed/i)).toBeNull();
     expect([window.localStorage.length, window.sessionStorage.length]).toEqual([0, 0]);
   });
 
-  it('a missed webhook is recovered by polling, then the same confirmation shows', async () => {
+  it('a missed webhook is recovered by polling, then the order page follows', async () => {
     await choose(await paying(), 'pay_no_webhook');
     const requests = recordRequests();
     vi.useFakeTimers({ shouldAdvanceTime: true });
     await openReturnPage();
     expect(await screen.findByRole('heading', { name: 'Confirming payment…' })).toBeInTheDocument();
-    expect(screen.queryByText('Order placed')).toBeNull();
+    expect(routerPush).not.toHaveBeenCalled();
 
     await act(() => vi.advanceTimersByTimeAsync(2_100));
     expect(requests.some((r) => r.path.endsWith('/status'))).toBe(true);
-    expect(within(await confirmation()).getByLabelText('Token 1')).toBeInTheDocument();
+    await sentToOrderPage();
   });
 
-  it('a same-table rescan of a placed session resumes the confirmation', async () => {
+  it('a same-table rescan of a placed session resumes its order page', async () => {
     await choose(await paying(), 'pay');
     renderCustomerPage('menu');
-    await waitFor(() => expect(routerPush).toHaveBeenCalledWith(RETURN));
+    await sentToOrderPage();
+    expect(routerPush).not.toHaveBeenCalledWith(RETURN);
     expect(screen.queryByRole('button', { name: /^Add / })).toBeNull();
   });
 });
@@ -171,7 +165,7 @@ describe('after placement', () => {
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith(RETURN));
   });
 
-  it('paying again never makes a second order: the confirmation stays the same', async () => {
+  it('paying again never makes a second order: the same order page follows', async () => {
     await choose(await paying(), 'pay');
     const again = await call('/customer/checkout/checkout-0/payments');
     expect(again.status).toBe(404);
@@ -183,8 +177,9 @@ describe('after placement', () => {
     expect(((await second.json()) as { error: { code: string } }).error.code).toBe(
       'order_already_placed',
     );
-    await openReturnPage();
-    expect(within(await confirmation()).getByLabelText('Token 1')).toBeInTheDocument();
+    expect(data.order.token_number).toBe('1');
+    renderCustomerPage('payment');
+    await sentToOrderPage();
   });
 
   it('Pay on a stale review page after placement routes to the confirmation', async () => {

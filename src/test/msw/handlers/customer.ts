@@ -8,6 +8,7 @@ import {
   buildEnteredSession,
   buildPaymentSummary,
   MOCK_DISHES,
+  MOCK_RESTAURANT_NAME,
   MOCK_TABLES,
   MOCK_TAX_RATE_BP,
   type WireAttemptStatus,
@@ -37,6 +38,13 @@ import { errorResponse } from '../respond';
  * Leave pending) that sends the browser back to the app's return page. The
  * customer's return changes nothing: only a status poll applies the outcome,
  * and the mock never reports a payment as paid.
+ *
+ * Orders (S6) mirror the backend: the placing session reads its order until
+ * Completed, which ends that session; an SMS link's secret redeems into an
+ * order-access grant cookie (`steward_order_access`) that reads the one order
+ * until the link expires; every refusal is the same 404. Mock-only control
+ * routes (`/mock-control/orders/...`) stand in for the kitchen and service
+ * staff (F-05) and for an SMS: advance the status, read the link, expire it.
  * Scenarios only select fixtures.
  */
 
@@ -78,6 +86,157 @@ const attemptsById = new Map<string, MockAttempt>();
 const states = new Map<string, MockState>();
 let nextId = 1;
 
+/* S6: placed orders, order-access grants and the realtime event feed. */
+type OrderStatus = 'placed' | 'cooking' | 'ready_to_serve' | 'completed';
+const NEXT_STATUS: Partial<Record<OrderStatus, OrderStatus>> = {
+  placed: 'cooking',
+  cooking: 'ready_to_serve',
+  ready_to_serve: 'completed',
+};
+type MockOrder = {
+  id: string;
+  qr: string;
+  tableNumber: string;
+  tokenNumber: string;
+  placedAt: string;
+  status: OrderStatus;
+  history: { state: OrderStatus; occurred_at: string }[];
+  checkout: NonNullable<MockState['checkout']>['data'];
+  /** The placing session's cookie value, until Completed ends that session. */
+  sessionValue: string | null;
+  /** The SMS link's secret (a real backend stores only its hash). */
+  secret: string;
+  linkExpired: boolean;
+};
+export type MockOrderEvent = {
+  event_id: string;
+  type: 'order.status_changed';
+  occurred_at: string;
+  order_id: string;
+  order_status: OrderStatus;
+};
+const GRANT_COOKIE = 'steward_order_access';
+const GRANT_MARKER = 'mock-grant.';
+const orders = new Map<string, MockOrder>();
+/** Grant cookie value → order ID. */
+const grants = new Map<string, string>();
+/** Sessions that ended at Completed: their cookie no longer resumes them. */
+const endedSessions = new Set<string>();
+let nextEvent = 1;
+const orderListeners = new Set<(event: MockOrderEvent) => void>();
+
+/** The standalone mock API's WebSocket subscribes here. */
+export function onMockOrderEvent(listener: (event: MockOrderEvent) => void): () => void {
+  orderListeners.add(listener);
+  return () => orderListeners.delete(listener);
+}
+
+function orderRef(n: number): string {
+  return `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+}
+
+/** The SMS link of an order (path and fragment), as the placement SMS carries it. */
+export function mockOrderLink(orderId: string): string | null {
+  const order = orders.get(orderId);
+  return order ? `/t/${order.qr}/orders/${order.id}#k=${order.secret}` : null;
+}
+
+/** The link and every grant made from it expire (7 days on the backend). */
+export function expireMockOrderLink(orderId: string): boolean {
+  const order = orders.get(orderId);
+  if (!order) return false;
+  order.linkExpired = true;
+  return true;
+}
+
+/**
+ * Kitchen or service staff move the order on (F-05 §6, via the backend's
+ * transition service): one history entry, one event; Completed ends the
+ * placing session (F1-37).
+ */
+export function advanceMockOrder(orderId: string): OrderStatus | null {
+  const order = orders.get(orderId);
+  const next = order ? NEXT_STATUS[order.status] : undefined;
+  if (!order || !next) return null;
+  const now = new Date().toISOString();
+  order.status = next;
+  order.history.push({ state: next, occurred_at: now });
+  if (next === 'completed' && order.sessionValue) {
+    endedSessions.add(order.sessionValue);
+    states.delete(order.sessionValue);
+    if (cookielessDevice.session?.value === order.sessionValue) {
+      cookielessDevice.session = undefined;
+    }
+    order.sessionValue = null;
+  }
+  const event: MockOrderEvent = {
+    event_id: `mock-event-${nextEvent++}`,
+    type: 'order.status_changed',
+    occurred_at: now,
+    order_id: order.id,
+    order_status: next,
+  };
+  orderListeners.forEach((listener) => listener(event));
+  return next;
+}
+
+function cookieValue(header: string | null | undefined, name: string): string | undefined {
+  for (const part of (header ?? '').split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return rest.join('=');
+  }
+  return undefined;
+}
+
+function grantedOrder(cookieHeader: string | null | undefined): MockOrder | undefined {
+  const value =
+    cookieValue(cookieHeader, GRANT_COOKIE) ??
+    (cookielessDevice.enabled ? cookielessDevice.grant : undefined);
+  const orderId = value ? grants.get(value) : undefined;
+  const order = orderId ? orders.get(orderId) : undefined;
+  return order && !order.linkExpired ? order : undefined;
+}
+
+function sessionOrder(session: MockSession | undefined): MockOrder | undefined {
+  if (!session) return undefined;
+  const placement = states.get(session.value)?.placement;
+  const order = placement?.status === 'placed' ? orders.get(placement.orderId) : undefined;
+  return order && order.sessionValue === session.value ? order : undefined;
+}
+
+/**
+ * What a customer WebSocket with these cookies may hear (§25): the session's
+ * order and the grant's order, decided here, never by the client.
+ */
+export function mockSocketAccess(cookieHeader: string | undefined) {
+  const value = cookieValue(cookieHeader, COOKIE);
+  const session =
+    value && value.startsWith(MARKER) && !endedSessions.has(value)
+      ? { qr: value.slice(MARKER.length).split('.')[0] ?? '', value }
+      : undefined;
+  return {
+    sessionOrderId: sessionOrder(session)?.id ?? null,
+    grantOrderId: grantedOrder(cookieHeader)?.id ?? null,
+  };
+}
+
+function orderResponse(order: MockOrder) {
+  const checkout = order.checkout;
+  return {
+    data: {
+      order_ref: order.id,
+      token_number: order.tokenNumber,
+      status: order.status,
+      placed_at: order.placedAt,
+      restaurant: { name: MOCK_RESTAURANT_NAME },
+      table: { number: order.tableNumber },
+      items: checkout.lines,
+      amounts: checkout.amounts,
+      history: order.history,
+    },
+  };
+}
+
 function stateOf(session: MockSession): MockState {
   let state = states.get(session.value);
   if (!state) {
@@ -99,7 +258,12 @@ function stateOf(session: MockSession): MockState {
  * implicit device instead: its session behaves exactly like a cookie session
  * (resume, a new session after it ends), without a cookie.
  */
-let cookielessDevice: { enabled: boolean; session: MockSession | undefined } = {
+let cookielessDevice: {
+  enabled: boolean;
+  session: MockSession | undefined;
+  /** S6: the device's order-access grant (the `steward_order_access` cookie). */
+  grant?: string | undefined;
+} = {
   enabled: false,
   session: undefined,
 };
@@ -107,6 +271,11 @@ let cookielessDevice: { enabled: boolean; session: MockSession | undefined } = {
 /** Vitest: the handlers keep one device session without a cookie. */
 export function useCookielessMockDevice() {
   cookielessDevice = { enabled: true, session: undefined };
+}
+
+/** Vitest: continue as another device (no session, no grant), e.g. to open an SMS link. */
+export function useAnotherMockDevice() {
+  cookielessDevice = { enabled: true, session: undefined, grant: undefined };
 }
 
 /** Vitest: the device's session ends (as after 5 idle minutes): cart, details and review go. */
@@ -123,6 +292,10 @@ export function resetMockCarts() {
   attemptsById.clear();
   nextId = 1;
   cookielessDevice = { enabled: false, session: undefined };
+  orders.clear();
+  grants.clear();
+  endedSessions.clear();
+  nextEvent = 1;
 }
 
 function currentSession(request: Request): MockSession | undefined {
@@ -137,7 +310,7 @@ function cookieSession(request: Request): MockSession | undefined {
     const [name, ...rest] = part.trim().split('=');
     if (name !== COOKIE) continue;
     const value = rest.join('=');
-    if (!value.startsWith(MARKER)) return undefined;
+    if (!value.startsWith(MARKER) || endedSessions.has(value)) return undefined;
     const [qr] = value.slice(MARKER.length).split('.');
     return qr && MOCK_TABLES[qr] ? { qr, value } : undefined;
   }
@@ -280,10 +453,27 @@ function confirmSuccess(state: MockState, attempt: MockAttempt, scenario: MockSc
       ? { status: 'paid_not_placed' }
       : {
           status: 'placed',
-          orderId: `order-${nextId++}`,
+          orderId: orderRef(nextId++),
           tokenNumber: String(nextToken++),
           placedAt: new Date().toISOString(),
         };
+  const placement = state.placement;
+  if (placement.status === 'placed' && state.checkout) {
+    const sessionValue = [...states.entries()].find(([, value]) => value === state)?.[0] ?? null;
+    orders.set(placement.orderId, {
+      id: placement.orderId,
+      qr: sessionValue?.slice(MARKER.length).split('.')[0] ?? '',
+      tableNumber: state.checkout.data.table.number,
+      tokenNumber: placement.tokenNumber,
+      placedAt: placement.placedAt,
+      status: 'placed',
+      history: [{ state: 'placed', occurred_at: placement.placedAt }],
+      checkout: state.checkout.data,
+      sessionValue,
+      secret: `mockLinkSecret${placement.orderId.slice(-4)}`,
+      linkExpired: false,
+    });
+  }
 }
 
 /** The checkout as `GET /customer/checkout` returns it: with the payment summary once started. */
@@ -297,7 +487,13 @@ function checkoutView(state: MockState) {
       status: placement?.status ?? ('payment_started' as const),
       payment: buildPaymentSummary(state.attempts.map((attempt) => attempt.status)),
       ...(placement?.status === 'placed'
-        ? { order: { token_number: placement.tokenNumber, placed_at: placement.placedAt } }
+        ? {
+            order: {
+              order_ref: placement.orderId,
+              token_number: placement.tokenNumber,
+              placed_at: placement.placedAt,
+            },
+          }
         : {}),
     },
   };
@@ -761,4 +957,57 @@ export const customerHandlers = [
     else if (action === 'cancel') attempt.outcome = 'abandoned';
     return new HttpResponse(null, { status: 303, headers: { Location: attempt.returnUrl } });
   }),
+
+  // S6: redeem an SMS link's secret for an order-access grant.
+  http.post('*/customer/order-access', async ({ request }) => {
+    const body = (await request.json().catch(() => null)) as {
+      order_ref?: unknown;
+      secret?: unknown;
+    } | null;
+    const order = typeof body?.order_ref === 'string' ? orders.get(body.order_ref) : undefined;
+    if (!order || order.linkExpired || body?.secret !== order.secret) return notFound();
+    const value = `${GRANT_MARKER}${nextId++}`;
+    grants.set(value, order.id);
+    if (cookielessDevice.enabled) cookielessDevice.grant = value;
+    return HttpResponse.json(
+      { data: { order_ref: order.id } },
+      {
+        headers: cookielessDevice.enabled
+          ? NO_STORE
+          : {
+              'Set-Cookie': `${GRANT_COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax`,
+              ...NO_STORE,
+            },
+      },
+    );
+  }),
+
+  // S6: the order, for its placing session (until Completed) or a grant; else one 404.
+  http.get('*/customer/orders/:orderRef', ({ request, params }) => {
+    const ref = String(params.orderRef);
+    const cookies = request.headers.get('cookie');
+    const order =
+      sessionOrder(currentSession(request))?.id === ref
+        ? orders.get(ref)
+        : grantedOrder(cookies)?.id === ref
+          ? orders.get(ref)
+          : undefined;
+    if (!order) return notFound();
+    return HttpResponse.json(orderResponse(order), { headers: NO_STORE });
+  }),
+
+  // Mock-only controls (never part of the backend contract): staff and SMS stand-ins.
+  http.post('*/mock-control/orders/:orderRef/advance', ({ params }) => {
+    const status = advanceMockOrder(String(params.orderRef));
+    return status ? HttpResponse.json({ status }) : notFound();
+  }),
+  http.get('*/mock-control/orders/:orderRef/link', ({ params }) => {
+    const link = mockOrderLink(String(params.orderRef));
+    return link ? HttpResponse.json({ link }) : notFound();
+  }),
+  http.post('*/mock-control/orders/:orderRef/expire', ({ params }) =>
+    expireMockOrderLink(String(params.orderRef))
+      ? new HttpResponse(null, { status: 204 })
+      : notFound(),
+  ),
 ];

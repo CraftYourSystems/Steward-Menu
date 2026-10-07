@@ -6,12 +6,14 @@ import { MOCK_QR, MOCK_RESTAURANT_NAME } from '../src/test/factories/customer';
  * Verified payment → order placement (F-01 S5) against the standalone mock API,
  * whose mock gateway page offers "Pay successfully" (the signed webhook places
  * the order before the customer returns) and "Pay, no webhook" (only a status
- * poll finds the success). The real backend is exercised by
+ * poll finds the success). A placed order goes on to its order page (S6,
+ * `customer-order.spec.ts`). The real backend is exercised by
  * `e2e/real-backend/customer-placement.spec.ts`.
  */
 
 const MENU = `/t/${MOCK_QR.table1}`;
 const RETURN = new RegExp(`${MENU}/payment/return(\\?.*)?$`);
+const ORDER_PAGE = new RegExp(`${MENU}/orders/[0-9a-f-]{36}$`);
 
 async function expectNoAxeViolations(page: Page) {
   const results = await new AxeBuilder({ page }).analyze();
@@ -45,54 +47,50 @@ async function payWith(page: Page, choice: 'Pay successfully' | 'Pay, no webhook
   await page.getByRole('button', { name: 'Pay', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Mock payment' })).toBeVisible();
   await page.getByRole('button', { name: choice, exact: true }).click();
-  await expect(page).toHaveURL(RETURN);
 }
 
-function placed(page: Page) {
-  return page.getByRole('status', { name: 'Order placed' });
-}
+const token = (page: Page) => page.getByLabel(/^Token \d+$/);
 
-test('Pay successfully → webhook → Order placed in place, with the token', async ({ page }) => {
+test('Pay successfully → webhook → the order page, with the token', async ({ page }) => {
   await reachReview(page);
   await payWith(page, 'Pay successfully');
 
-  await expect(placed(page)).toBeVisible();
-  await expect(page.getByLabel(/^Token \d+$/)).toBeVisible();
-  await expect(placed(page)).toContainText('Table 1');
-  await expect(placed(page)).toContainText('2 × Dal Makhani');
-  await expect(placed(page)).toContainText('Total paid₹525.00');
-  await expect(page.locator('a[href*="/orders/"]')).toHaveCount(0);
-  expect(page.url()).not.toContain('/orders/');
-  await expectNoAxeViolations(page); // order placed
+  await expect(page).toHaveURL(ORDER_PAGE);
+  await expect(token(page)).toBeVisible();
+  await expect(page.getByText('Table 1')).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Items' })).toContainText('2 × Dal Makhani');
+  await expect(page.getByRole('region', { name: 'Amounts' })).toContainText('Total paid₹525.00');
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
-test('Pay, no webhook → polling recovers the success → Order placed', async ({ page }) => {
+test('Pay, no webhook → polling recovers the success → the order page', async ({ page }) => {
   await reachReview(page);
   await payWith(page, 'Pay, no webhook');
-  await expect(placed(page)).toBeVisible({ timeout: 10_000 });
-  await expect(page.getByLabel(/^Token \d+$/)).toBeVisible();
+  await expect(page).toHaveURL(RETURN);
+  await expect(page).toHaveURL(ORDER_PAGE, { timeout: 10_000 });
+  await expect(token(page)).toBeVisible();
 });
 
-test('a placed session resumes its confirmation from any page and cannot order again', async ({
+test('a placed session resumes its order page from any page and cannot order again', async ({
   page,
 }) => {
   await reachReview(page);
   await payWith(page, 'Pay successfully');
-  await expect(placed(page)).toBeVisible();
-  const token = await page.getByLabel(/^Token \d+$/).textContent();
+  await expect(page).toHaveURL(ORDER_PAGE);
+  const orderUrl = page.url();
+  const placedToken = await token(page).textContent();
   for (const path of [MENU, `${MENU}/cart`, `${MENU}/details`, `${MENU}/checkout`]) {
     await page.goto(path);
-    await expect(page).toHaveURL(RETURN);
-    await expect(placed(page)).toBeVisible();
+    await expect(page).toHaveURL(orderUrl);
+    await expect(token(page)).toHaveText(placedToken ?? '');
   }
-  await expect(page.getByLabel(/^Token \d+$/)).toHaveText(token ?? '');
 });
 
 test('paid but not placed: the refund notice, no order and no token', async ({ page, context }) => {
   await reachReview(page);
   await setScenario(context, 'paid_not_placed');
   await payWith(page, 'Pay successfully');
+  await expect(page).toHaveURL(RETURN);
 
   await expect(
     page.getByRole('heading', { name: 'Payment received, but your order could not be placed' }),

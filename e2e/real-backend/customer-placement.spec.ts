@@ -9,7 +9,7 @@ import { localDatabaseAvailable, paidNotPlacedRecord, setDishAvailable } from '.
  * and a `seed_ordering` database (500 bp tax, stand-in payment configuration).
  *
  * - Journey A: the stand-in's "Pay successfully" delivers a signed webhook: Paid →
- *   Placed before the customer returns.
+ *   Placed before the customer returns, who goes on to the order page (S6).
  * - Journey B: "Pay, no webhook": the backend finds the success by a status query
  *   once the attempt is 15 seconds old (F1-35).
  * - Journey C: a dish becomes unavailable before the webhook: Paid, paid not
@@ -20,6 +20,7 @@ const QR = process.env.E2E_CUSTOMER_QR_TABLE_1;
 const API = process.env.E2E_API_BASE_URL;
 const MENU = `/t/${QR}`;
 const RETURN = new RegExp(`${MENU}/payment/return\\?checkout=[0-9a-f-]{36}$`);
+const ORDER_PAGE = new RegExp(`${MENU}/orders/[0-9a-f-]{36}$`);
 const APP_ORIGIN = 'http://localhost:3320';
 const RECOVERY_TIMEOUT = 45_000; // status queries start at 15 s; polling backs off to 30 s
 
@@ -57,44 +58,42 @@ async function toStandIn(page: Page) {
 
 async function choose(page: Page, choice: 'Pay successfully' | 'Pay, no webhook') {
   await page.getByRole('button', { name: choice, exact: true }).click();
-  await expect(page).toHaveURL(RETURN);
-}
-
-function placed(page: Page) {
-  return page.getByRole('status', { name: 'Order placed' });
 }
 
 async function checkout(page: Page) {
   return (await (await page.request.get(`${API}/customer/checkout`)).json()).data;
 }
 
-async function expectPlacedConfirmation(page: Page) {
-  await expect(placed(page)).toContainText('Table 1');
-  await expect(placed(page)).toContainText('2 × Dal Makhani');
-  await expect(placed(page)).toContainText('1 × Masala Chaas');
-  await expect(placed(page)).toContainText('Total paid₹525.00');
+/** The order page (S6) after placement: the token, items and total the backend placed. */
+async function expectPlacedOrderPage(page: Page) {
+  await expect(page).toHaveURL(ORDER_PAGE);
+  await expect(page.getByText('Table 1')).toBeVisible();
+  const items = page.getByRole('region', { name: 'Items' });
+  await expect(items).toContainText('2 × Dal Makhani');
+  await expect(items).toContainText('1 × Masala Chaas');
+  await expect(page.getByRole('region', { name: 'Amounts' })).toContainText('Total paid₹525.00');
   const current = await checkout(page);
   expect(current.status).toBe('placed');
   expect(current.order.token_number).toMatch(/^[1-9][0-9]*$/);
+  expect(page.url()).toContain(`/orders/${current.order.order_ref}`);
   await expect(page.getByLabel(`Token ${current.order.token_number}`)).toBeVisible();
   expect(current.payment.latest_attempt).toEqual({ status: 'paid' });
   expect(JSON.stringify(current)).not.toMatch(/#k=|secret|redirect|merchant/i);
-  await expect(page.locator('a[href*="/orders/"]')).toHaveCount(0);
   return current.order.token_number as string;
 }
 
-test('Journey A: Pay → stand-in "Pay successfully" → webhook → Order placed with token', async ({
+test('Journey A: Pay → stand-in "Pay successfully" → webhook → the order page with token', async ({
   page,
 }) => {
   await reachReview(page);
   await toStandIn(page);
   await choose(page, 'Pay successfully');
 
-  await expect(placed(page)).toBeVisible();
-  const token = await expectPlacedConfirmation(page);
+  const token = await expectPlacedOrderPage(page);
+  const orderUrl = page.url();
   await expectNoAxeViolations(page); // order placed
 
-  // The session cannot order again; a same-table rescan resumes the confirmation.
+  // The session cannot order again; a same-table rescan resumes the order page.
   const again = await page.request.post(`${API}/customer/cart/lines`, {
     data: { menu_item_id: '00000000-0000-4000-8000-000000000000', quantity: 1 },
     headers: { Origin: APP_ORIGIN },
@@ -102,22 +101,23 @@ test('Journey A: Pay → stand-in "Pay successfully" → webhook → Order place
   expect(again.status()).toBe(409);
   expect((await again.json()).error.code).toBe('order_already_placed');
   await page.goto(MENU);
-  await expect(page).toHaveURL(new RegExp(`${MENU}/payment/return$`));
+  await expect(page).toHaveURL(orderUrl);
   await expect(page.getByLabel(`Token ${token}`)).toBeVisible();
   expect(await page.evaluate(() => [localStorage.length, sessionStorage.length])).toEqual([0, 0]);
 });
 
-test('Journey B: Pay → "Pay, no webhook" → polling → status-query recovery → Order placed', async ({
+test('Journey B: Pay → "Pay, no webhook" → polling → status-query recovery → the order page', async ({
   page,
 }) => {
   await reachReview(page);
   await toStandIn(page);
   await choose(page, 'Pay, no webhook');
 
+  await expect(page).toHaveURL(RETURN);
   await expect(page.getByRole('heading', { name: 'Confirming payment…' })).toBeVisible();
   expect((await checkout(page)).status).toBe('payment_started');
-  await expect(placed(page)).toBeVisible({ timeout: RECOVERY_TIMEOUT });
-  await expectPlacedConfirmation(page);
+  await expect(page).toHaveURL(ORDER_PAGE, { timeout: RECOVERY_TIMEOUT });
+  await expectPlacedOrderPage(page);
 });
 
 test('Journey C: a dish unavailable before placement → paid not placed, no order/token/SMS', async ({
@@ -132,6 +132,7 @@ test('Journey C: a dish unavailable before placement → paid not placed, no ord
   setDishAvailable(QR!, 'Masala Chaas', false);
   try {
     await choose(page, 'Pay successfully');
+    await expect(page).toHaveURL(RETURN);
 
     await expect(
       page.getByRole('heading', { name: 'Payment received, but your order could not be placed' }),

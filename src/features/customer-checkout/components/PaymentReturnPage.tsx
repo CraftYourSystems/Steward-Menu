@@ -9,6 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatePanel } from '@/components/ui/StatePanel';
+import { orderPagePath } from '@/features/customer-order/paths';
 import { customerKeys } from '@/features/customer-session/query-keys';
 import {
   isUnauthorized,
@@ -56,10 +57,9 @@ export type PaymentNotice =
  * is left.
  *
  * After a verified payment (S5) the backend reports the outcome: **Order
- * placed**, shown in place with the order token, table, items and total (P1;
- * the order page itself is S6), or **paid but not placed** (F1-22): the
- * refund notice, with no order and no token. A same-table rescan of a placed
- * session lands here and shows the same confirmation (F1-32).
+ * placed**, and the customer goes on to the order page (S6) with the token,
+ * items, total and live status; or **paid but not placed** (F1-22): the refund
+ * notice, with no order and no token.
  */
 export function PaymentReturnPage() {
   const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
@@ -91,12 +91,16 @@ export function PaymentReturnPage() {
   const awaiting =
     paying !== null && (latest === null || latest === 'awaiting_payment' || latest === 'paid');
 
-  // Keep the session boundary's stage in step with the backend's outcome (S5).
+  // Keep the session boundary's stage in step with the backend's outcome (S5), and
+  // take a placed order to its order page (S6).
   const outcome = current?.status;
+  const placedOrderRef = outcome === 'placed' ? (current?.order?.orderRef ?? null) : null;
   useEffect(() => {
-    if (outcome === 'placed') reportSessionStage('placed');
-    else if (outcome === 'paid_not_placed') reportSessionStage('payment_issue');
+    if (outcome === 'paid_not_placed') reportSessionStage('payment_issue');
   }, [outcome, reportSessionStage]);
+  useEffect(() => {
+    if (placedOrderRef) router.replace(orderPagePath(qrCode, placedOrderRef));
+  }, [placedOrderRef, router, qrCode]);
 
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
@@ -180,7 +184,7 @@ export function PaymentReturnPage() {
       <h2 id="payment-title" className="mb-4 text-lg font-semibold text-text">
         Payment
       </h2>
-      {checkout.isPending || isUnauthorized(checkout.error) ? (
+      {checkout.isPending || isUnauthorized(checkout.error) || placedOrderRef ? (
         <div aria-busy="true" aria-live="polite">
           <p className="sr-only">Loading your payment…</p>
           <Skeleton className="h-24 w-full" />
@@ -192,8 +196,6 @@ export function PaymentReturnPage() {
           requestId={checkout.error instanceof ApiError ? checkout.error.requestId : undefined}
           action={<Button onClick={() => void checkout.refetch()}>Try again</Button>}
         />
-      ) : current?.status === 'placed' && current.order ? (
-        <OrderPlaced checkout={current} />
       ) : current?.status === 'paid_not_placed' ? (
         <PaidNotPlaced />
       ) : !paying ? (
@@ -208,69 +210,6 @@ export function PaymentReturnPage() {
           onRelease={() => release.mutate(paying.checkoutId)}
         />
       )}
-    </section>
-  );
-}
-
-const PLACED_TIME = new Intl.DateTimeFormat('en-IN', { hour: 'numeric', minute: '2-digit' });
-
-/**
- * The placed order, in place (S5, P1): what the backend placed, from the locked
- * checkout. Nothing is calculated here, and nothing links to an order page yet
- * (S6).
- */
-function OrderPlaced({ checkout }: { checkout: Checkout }) {
-  const order = checkout.order!;
-  return (
-    <section
-      role="status"
-      aria-labelledby="order-placed-title"
-      className="space-y-5 rounded-lg border border-border p-5"
-    >
-      <div className="text-center">
-        <h3 id="order-placed-title" className="text-lg font-semibold text-text">
-          Order placed
-        </h3>
-        <p className="mt-3 text-sm text-text-muted">Your token</p>
-        <p
-          className="text-4xl font-semibold text-text tabular-nums"
-          aria-label={`Token ${order.tokenNumber}`}
-        >
-          {order.tokenNumber}
-        </p>
-        <p className="mt-2 text-sm text-text-muted">
-          Table {checkout.tableNumber} · Placed at{' '}
-          <time dateTime={order.placedAt}>{PLACED_TIME.format(new Date(order.placedAt))}</time>
-        </p>
-      </div>
-      <section aria-labelledby="placed-items">
-        <h4 id="placed-items" className="text-sm font-semibold text-text">
-          Your order
-        </h4>
-        <ul className="mt-2 divide-y divide-border">
-          {checkout.lines.map((line, index) => (
-            <li key={index} className="flex items-start justify-between gap-4 py-2">
-              <div className="min-w-0">
-                <p className="break-words text-text">
-                  {line.quantity} × {line.name}
-                </p>
-                {line.specialInstructions ? (
-                  <p className="text-sm break-words text-text-muted">
-                    Note: {line.specialInstructions}
-                  </p>
-                ) : null}
-              </div>
-              <p className="shrink-0 text-text">
-                <Money amountMinor={line.lineTotalMinor} />
-              </p>
-            </li>
-          ))}
-        </ul>
-        <p className="mt-2 flex justify-between border-t border-border pt-2 font-semibold text-text">
-          <span>Total paid</span>
-          <Money amountMinor={checkout.totalMinor} />
-        </p>
-      </section>
     </section>
   );
 }

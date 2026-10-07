@@ -24,6 +24,8 @@ export const EnteredSessionSchema = z
   })
   .transform(({ data }) => ({
     stage: data.session.stage,
+    // A placed session's order (S6): its order page is `/t/{qr}/orders/{orderRef}`.
+    orderRef: data.session.order_ref,
     restaurantName: data.restaurant.name,
     tableNumber: data.table.number,
   }));

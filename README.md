@@ -4,7 +4,7 @@ The customer-facing application of **Steward 1.0**, the restaurant operating sys
 
 **QR → Menu → Cart → Name + Mobile → Checkout → PhonePe → Order status** (F-01 Order Flow).
 
-> **Status: F-01 S3.** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2), customer details, special instructions and the order review with backend pricing (S3) are implemented and integrated with FastAPI. Payment, order placement and order status (S4–S6) are not built yet.
+> **Status: F-01 S6.** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2), customer details, special instructions and the order review with backend pricing (S3), payment initiation and return against the stand-in gateway (S4), verified payment → order placement (S5), and the order page with SMS-link access and live status (S6) are implemented and integrated with FastAPI.
 >
 > Production tax-rate provisioning remains an open F-08 release blocker. S3 implements the configuration dependency and dev/test fixture path but does not create the production configuration surface. Until it exists, Review in production shows "This restaurant can't take orders right now".
 
@@ -24,12 +24,14 @@ Next.js 16 (App Router) · React 19 · TypeScript (strict) · TanStack Query · 
 
 ## Routes
 
-| Route                  | What it does                                                                                                                                                                                                                                           |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/t/[qrCode]`          | QR entry: creates or resumes the customer session, then shows the session restaurant's available menu (S1), searchable by dish name, with Add and quantity controls and a cart summary (S2).                                                           |
-| `/t/[qrCode]/cart`     | The server-side cart (S2, S3): lines at current base prices with special instructions (a dish can have several lines), quantity changes, notes, removal, the subtotal of available dishes, and Continue. Unavailable dishes stay marked until removed. |
-| `/t/[qrCode]/details`  | Name + Indian mobile number (S3), validated by the backend; no OTP. Prefilled on reload.                                                                                                                                                               |
-| `/t/[qrCode]/checkout` | The review step (S3): the open checkout with the backend's subtotal, tax and total, or a Review action. Loading the page never creates a checkout. No payment step yet.                                                                                |
+| Route                           | What it does                                                                                                                                                                                                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/t/[qrCode]`                   | QR entry: creates or resumes the customer session, then shows the session restaurant's available menu (S1), searchable by dish name, with Add and quantity controls and a cart summary (S2).                                                                 |
+| `/t/[qrCode]/cart`              | The server-side cart (S2, S3): lines at current base prices with special instructions (a dish can have several lines), quantity changes, notes, removal, the subtotal of available dishes, and Continue. Unavailable dishes stay marked until removed.       |
+| `/t/[qrCode]/details`           | Name + Indian mobile number (S3), validated by the backend; no OTP. Prefilled on reload.                                                                                                                                                                     |
+| `/t/[qrCode]/checkout`          | The review step (S3): the open checkout with the backend's subtotal, tax and total, or a Review action. Loading the page never creates a checkout. **Pay** (S4) goes to the gateway.                                                                         |
+| `/t/[qrCode]/payment/return`    | Where the gateway returns (S4): confirming, not completed, retry or change order; never trusts the URL. A placed order goes on to its order page (S5, S6); paid-but-not-placed shows the refund notice.                                                      |
+| `/t/[qrCode]/orders/[orderRef]` | The order page (S6): token, items, total and live status (Placed → Cooking → Ready → Completed). Read by the placing session until Completed, or on any device from the SMS link (`#k=` secret, removed from the URL at once). Outside the session boundary. |
 
 Printed QR codes encode `/t/<qrCode>`; the hostname in front of it is configurable and not fixed in code. Every page under `/t/[qrCode]` enters or resumes the session itself, so a direct visit or reload of `/cart` keeps the same session and cart.
 
@@ -109,6 +111,8 @@ E2E_API_BASE_URL=http://localhost:8000/api/v1
 E2E_CUSTOMER_QR_TABLE_1=…  E2E_CUSTOMER_QR_TABLE_2=…  E2E_CUSTOMER_QR_INACTIVE=…   # from seed_ordering
 pnpm test:e2e:backend
 ```
+
+The S6 specs (`customer-order.spec.ts`, Journeys A–G) also need `E2E_BACKEND_DIR` (the Steward-Backend checkout), `E2E_BACKEND_DATABASE_URL` (the backend's local database URL; staff act through `python -m app.cli.transition_order`), and `E2E_POSTGRES_CONTAINER` / `E2E_DATABASE_NAME` (to mint and expire order links locally). Run the backend for this suite with raised per-IP customer limits, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=1000 STEWARD_CUSTOMER_READ_LIMIT=10000 STEWARD_CUSTOMER_ORDER_ACCESS_IP_LIMIT=500 STEWARD_CUSTOMER_WS_CONNECT_LIMIT=1000` (every journey comes from one address; local configuration only).
 
 The specs are skipped without the QR codes. The suite enters the QR code more often than the backend's default QR-entry limit allows per minute from one address (20), so run the local backend with a higher limit for it, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=200` (local configuration only). The 5-minute cart expiry is covered by the backend's FakeClock integration tests, not by E2E.
 

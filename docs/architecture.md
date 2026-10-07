@@ -23,12 +23,14 @@ Where this document and the contract differ, the contract wins.
 src/
 ├── app/
 │   ├── layout.tsx                 # fonts, global styles, customer query client, mobile container
-│   ├── t/[qrCode]/layout.tsx      # R1: the session boundary for every customer page
-│   ├── t/[qrCode]/page.tsx        # the menu with search and cart controls
-│   ├── t/[qrCode]/cart/page.tsx   # the server-side cart (S2, S3)
-│   ├── t/[qrCode]/details/page.tsx    # Name + mobile (S3)
-│   ├── t/[qrCode]/checkout/page.tsx   # the review step (S3) with Pay (S4)
-│   ├── t/[qrCode]/payment/return/page.tsx  # the payment return page (S4); order placed / paid-not-placed (S5)
+│   ├── t/[qrCode]/(ordering)/     # route group (adds nothing to the URL): the ordering pages
+│   │   ├── layout.tsx             # R1: the session boundary for every ordering page
+│   │   ├── page.tsx               # the menu with search and cart controls
+│   │   ├── cart/page.tsx          # the server-side cart (S2, S3)
+│   │   ├── details/page.tsx       # Name + mobile (S3)
+│   │   ├── checkout/page.tsx      # the review step (S3) with Pay (S4)
+│   │   └── payment/return/page.tsx    # the payment return page (S4); placed → order page, paid-not-placed (S5)
+│   ├── t/[qrCode]/orders/[orderRef]/page.tsx  # the order page (S6), outside the session boundary
 │   ├── not-found.tsx              # generic; reveals nothing about restaurants or tables
 │   └── error.tsx                  # last-resort error state
 ├── features/
@@ -36,8 +38,10 @@ src/
 │   ├── customer-menu/             # GET /customer/menu, menu schema, view, page, name search
 │   ├── customer-cart/             # /customer/cart API, schema, hooks, cart page, notes, quantity control, problems
 │   ├── customer-details/          # /customer/details API, schema, field-error mapping, details page
-│   └── customer-checkout/         # /customer/checkout API, schema, review problems, review page;
-│                                  #   S4: payment API, payment problems, status polling, return page
+│   ├── customer-checkout/         # /customer/checkout API, schema, review problems, review page;
+│   │                              #   S4: payment API, payment problems, status polling, return page
+│   └── customer-order/            # S6: order read and link redemption API, schemas, status copy and
+│                                  #   no-regression rule, realtime hook, order page
 ├── lib/
 │   ├── api/request.ts             # fetch with timeout, Zod contract validation
 │   ├── api/errors.ts              # error envelope → ApiError, safe user messages, Retry-After
@@ -45,7 +49,8 @@ src/
 │   ├── api/query-client.ts        # TanStack Query defaults; no 401 redirect
 │   ├── env.ts                     # NEXT_PUBLIC_API_BASE_URL validation
 │   ├── format/money.ts            # paise → INR display
-│   └── navigation.ts              # leaveForPayment: the one full-page navigation to the gateway (S4)
+│   ├── navigation.ts              # leaveForPayment: the one full-page navigation to the gateway (S4)
+│   └── realtime/connection.ts     # the customer WebSocket: dedupe, resync, backoff, 4440 (S6)
 ├── components/ui/                 # Button, StatePanel, ErrorState, EmptyState, Skeleton, Money
 ├── styles/tokens.css              # Steward brand primitives
 └── test/                          # MSW handlers, factories, mock API, setup (never shipped)
@@ -104,11 +109,18 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 ## S5 flow (verified payment → order placed)
 
 1. **Outcome from the backend only.** After a verified payment the backend reports `placed` (with `order: { token_number, placed_at }`) or `paid_not_placed` on `GET /customer/checkout`. The return page polls as in S4 until the checkout leaves `payment_started`; with the stand-in's **Pay successfully** the signed webhook has usually placed the order before the customer is back, and with **Pay, no webhook** the backend's status query finds it after about 15 seconds.
-2. **Order placed (P1).** Shown in place on `/payment/return`: the order token (labelled for screen readers), table, items with notes, total paid and placement time, exactly as returned. There is **no** `/orders/[orderRef]` page or link yet: the order page, order access and live status are S6.
+2. **Order placed (P1).** S5 showed it in place on `/payment/return`; since S6 the return page takes a placed checkout to its order page (`order.order_ref`), which shows the token, items, total and live status.
 3. **Paid but not placed (F1-22).** The refund notice: payment received, the order could not be placed because a dish became unavailable, the restaurant handles the refund. No order, no token, no retry.
-4. **Session after placement.** QR entry answers `stage: "placed"` (with `order_ref`) or `"payment_issue"`; the session boundary keeps such sessions on `/payment/return`, so a same-table rescan resumes the confirmation. A write answered `409 order_already_placed` (or `cart_locked` for a payment issue) switches the cached stage and takes the customer there.
+4. **Session after placement.** QR entry answers `stage: "placed"` (with `order_ref`) or `"payment_issue"`; the session boundary sends a placed session to its order page (S6) and keeps a payment-issue session on `/payment/return`, so a same-table rescan resumes where the customer was. A write answered `409 order_already_placed` (or `cart_locked` for a payment issue) switches the cached stage and takes the customer there.
 5. **Mock API.** The mock gateway page adds **Pay successfully** (placed at once, like the signed webhook) and **Pay, no webhook** (placed on the next status poll); the `paid_not_placed` scenario makes a success end paid-not-placed.
 
-## Later slices
+## S6 flow (order access, live status, minimal lifecycle)
 
-S6 (order page, order-access link, customer WebSocket, status-change SMS) are designed in the F-01 technical design and are built here slice by slice. The original prototype in this repository's history is a visual reference for them, never a source of behavior.
+1. **Order page** `/t/[qrCode]/orders/[orderRef]` reads `GET /customer/orders/{order_ref}`: restaurant, table, token, status with its progress and times, items with notes, subtotal, tax and total paid. Nothing personal (no name or mobile), no staff identities. It sits **outside** the `(ordering)` session boundary, so opening an SMS link on another device never enters a table session there.
+2. **Access** is the backend's: the session that placed the order (until Completed), or an order-access grant. An SMS link (`…/orders/{ref}#k={secret}`) is redeemed once: the page reads the fragment, removes it from the address bar and history at once (`history.replaceState`, also on a fragment-only navigation), and posts it to `POST /customer/order-access`, which sets the HttpOnly grant cookie. The secret is kept nowhere. An unknown, wrong, partial or expired link, the reference alone, or ended access all show one generic "This order link isn't available".
+3. **Live status.** While the order is not Completed, `src/lib/realtime/connection.ts` keeps `ws(s)://<api host>/ws/customer` open; the cookies authenticate it and the backend fixes what it hears. Events are deduplicated by `event_id` and only trigger a refetch; every (re)connect and the page becoming visible or online again resync from the API; reconnects back off from 1 s to 30 s with jitter; a slow 30 s refresh runs while the socket is down. The page shows **Live updates on** / **Reconnecting…** and **Status as of** the last read. Out-of-order responses never move the status backwards (`newerOrder`).
+4. **Completed** ends the placing session (F1-37): the backend sends the Completed event and closes the socket with `4440`; the API then refuses this session, so the page keeps the last order it read, marked Completed (the only time an event's status is shown, after the server ended access). A same-table rescan starts afresh. A grant keeps reading the order until its link expires.
+5. **Mock API.** The mock keeps orders, links and grants like the backend and serves `/ws/customer` (`ws` package, never bundled). Mock-only control routes stand in for staff and the SMS: `POST /mock-control/orders/{ref}/advance`, `GET …/link`, `POST …/expire`.
+6. **Real-backend E2E.** Staff act through the backend's transition command (`e2e/real-backend/backend-cli.ts`); the suite mints a link exactly like the SMS's in the local database (SMS bodies are cleared once sent).
+
+The original prototype in this repository's history is a visual reference only, never a source of behavior.

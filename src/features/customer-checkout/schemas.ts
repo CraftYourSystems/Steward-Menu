@@ -71,8 +71,14 @@ export const CheckoutSchema = z
       // Present once payment started.
       payment: PaymentSummarySchema.optional(),
       // S5 (P1): present only for a `placed` checkout. The token is a display
-      // reference, never a credential (F1-15).
-      order: z.object({ token_number: z.string().min(1), placed_at: z.iso.datetime() }).optional(),
+      // reference, never a credential (F1-15); `order_ref` (S6) names the order page.
+      order: z
+        .object({
+          order_ref: z.string().min(1),
+          token_number: z.string().min(1),
+          placed_at: z.iso.datetime(),
+        })
+        .optional(),
     }),
   })
   .transform(({ data }) => ({
@@ -80,7 +86,11 @@ export const CheckoutSchema = z
     status: data.status,
     payment: data.payment ?? null,
     order: data.order
-      ? { tokenNumber: data.order.token_number, placedAt: data.order.placed_at }
+      ? {
+          orderRef: data.order.order_ref,
+          tokenNumber: data.order.token_number,
+          placedAt: data.order.placed_at,
+        }
       : null,
     customerName: data.customer.name,
     mobileDisplay: data.customer.mobile_display,

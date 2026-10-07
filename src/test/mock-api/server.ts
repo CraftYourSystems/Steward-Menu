@@ -8,10 +8,18 @@
  *
  * The default port differs from Steward-Frontend's mock API (8787) so both
  * can run side by side.
+ *
+ * It also serves the customer WebSocket `/ws/customer` (F-01 S6) like FastAPI:
+ * the handshake needs an `Origin`; the subscription comes from the cookies
+ * only (the session's order, the grant's order); events are identifiers and a
+ * status hint; a session's socket closes with `4440` after its order completes,
+ * and one with no order access closes with `4440` straight away.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { getResponse } from 'msw';
+import { WebSocketServer } from 'ws';
 import { handlers } from '../msw/handlers';
+import { mockSocketAccess, onMockOrderEvent } from '../msw/handlers/customer';
 
 const port = Number(process.env.MOCK_API_PORT ?? 8788);
 
@@ -66,6 +74,41 @@ const server = createServer(async (req, res) => {
   response.headers.forEach((value, key) => res.setHeader(key, value));
   res.writeHead(response.status);
   res.end(Buffer.from(await response.arrayBuffer()));
+});
+
+const CLOSE_ACCESS_ENDED = 4440;
+const sockets = new WebSocketServer({ noServer: true });
+
+server.on('upgrade', (req, socket, head) => {
+  const path = new URL(req.url ?? '/', `http://localhost:${port}`).pathname;
+  if (path !== '/ws/customer' || !req.headers.origin) {
+    socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+    return;
+  }
+  sockets.handleUpgrade(req, socket, head, (ws) => {
+    const access = mockSocketAccess(req.headers.cookie);
+    const scopes = new Set([access.sessionOrderId, access.grantOrderId].filter(Boolean));
+    if (scopes.size === 0) {
+      ws.close(CLOSE_ACCESS_ENDED, 'customer_access_ended');
+      return;
+    }
+    const stop = onMockOrderEvent((event) => {
+      if (!scopes.has(event.order_id)) return;
+      ws.send(JSON.stringify(event));
+      const sessionEnded =
+        event.order_status === 'completed' &&
+        event.order_id === access.sessionOrderId &&
+        access.grantOrderId === null;
+      if (sessionEnded) {
+        stop();
+        ws.close(CLOSE_ACCESS_ENDED, 'customer_access_ended');
+      }
+    });
+    ws.on('close', stop);
+    ws.on('message', () => {
+      // Client messages never choose anything: ignored.
+    });
+  });
 });
 
 server.listen(port, () => {
