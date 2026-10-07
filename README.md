@@ -4,7 +4,7 @@ The customer-facing application of **Steward 1.0**, the restaurant operating sys
 
 **QR → Menu → Cart → Name + Mobile → Checkout → PhonePe → Order status** (F-01 Order Flow).
 
-> **Status: F-01 S6.** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2), customer details, special instructions and the order review with backend pricing (S3), payment initiation and return against the stand-in gateway (S4), verified payment → order placement (S5), and the order page with SMS-link access and live status (S6) are implemented and integrated with FastAPI.
+> **Status: F-01 S7 (implementation-complete, not production-ready).** QR entry, the customer session, the customer menu (S1), the server-side cart and name search (S2), customer details, special instructions and the order review with backend pricing (S3), payment initiation and return against the stand-in gateway (S4), verified payment → order placement (S5), the order page with SMS-link access and live status (S6), and the S7 corrections (realtime placement on the return page, rescans at deactivated tables, failed-payment → placement journeys) are implemented and integrated with FastAPI, against the backend's stand-in gateway and SMS sender. PhonePe, an SMS provider and F-05's staff workspaces are external to this repository and still missing for production.
 >
 > Production tax-rate provisioning remains an open F-08 release blocker. S3 implements the configuration dependency and dev/test fixture path but does not create the production configuration surface. Until it exists, Review in production shows "This restaurant can't take orders right now".
 
@@ -112,7 +112,7 @@ E2E_CUSTOMER_QR_TABLE_1=…  E2E_CUSTOMER_QR_TABLE_2=…  E2E_CUSTOMER_QR_INACTI
 pnpm test:e2e:backend
 ```
 
-The S6 specs (`customer-order.spec.ts`, Journeys A–G) also need `E2E_BACKEND_DIR` (the Steward-Backend checkout), `E2E_BACKEND_DATABASE_URL` (the backend's local database URL; staff act through `python -m app.cli.transition_order`), and `E2E_POSTGRES_CONTAINER` / `E2E_DATABASE_NAME` (to mint and expire order links locally). Run the backend for this suite with raised per-IP customer limits, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=1000 STEWARD_CUSTOMER_READ_LIMIT=10000 STEWARD_CUSTOMER_ORDER_ACCESS_IP_LIMIT=500 STEWARD_CUSTOMER_WS_CONNECT_LIMIT=1000` (every journey comes from one address; local configuration only).
+Steward-Backend CI runs this suite against a fresh backend (job `customer-e2e`). The S6 and S7 specs (`customer-order.spec.ts`, `customer-recovery.spec.ts`) also need `E2E_BACKEND_DIR` (the Steward-Backend checkout), `E2E_BACKEND_DATABASE_URL` (the backend's local database URL; staff act through `python -m app.cli.transition_order`), and `E2E_POSTGRES_CONTAINER` / `E2E_DATABASE_NAME` (to mint and expire order links locally). Run the backend for this suite with raised per-IP customer limits, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=1000 STEWARD_CUSTOMER_READ_LIMIT=10000 STEWARD_CUSTOMER_ORDER_ACCESS_IP_LIMIT=500 STEWARD_CUSTOMER_WS_CONNECT_LIMIT=1000` (every journey comes from one address; local configuration only).
 
 The specs are skipped without the QR codes. The suite enters the QR code more often than the backend's default QR-entry limit allows per minute from one address (20), so run the local backend with a higher limit for it, for example `STEWARD_CUSTOMER_SESSION_CREATE_LIMIT=200` (local configuration only). The 5-minute cart expiry is covered by the backend's FakeClock integration tests, not by E2E.
 

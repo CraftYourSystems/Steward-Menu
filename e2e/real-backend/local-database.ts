@@ -145,3 +145,33 @@ export function orderLifecycleRecord(orderRef: string) {
     ),
   };
 }
+
+/** S7: (de)activates the QR code's table, as F-04 will (no customer API does it). */
+export function setTableActive(qrCode: string, active: boolean): void {
+  checkQr(qrCode);
+  runSql(`UPDATE restaurant_tables SET is_active = ${active} WHERE qr_code = '${qrCode}'`);
+}
+
+/**
+ * Read-only (S7): the payments of the session that placed the order: each attempt
+ * as `<checkout status>:<attempt status>` in initiation order, and how many orders
+ * and payment issues that session has.
+ */
+export function sessionPaymentRecord(orderRef: string) {
+  checkUuid(orderRef);
+  const session = `(SELECT customer_session_id FROM orders WHERE id = '${orderRef}')`;
+  return {
+    attempts: runSql(
+      `SELECT string_agg(c.status || ':' || a.status, ',' ORDER BY a.initiated_at) ` +
+        `FROM payment_attempts a JOIN checkouts c ON c.id = a.checkout_id ` +
+        `WHERE c.customer_session_id = ${session}`,
+    ),
+    orders: Number(runSql(`SELECT count(*) FROM orders WHERE customer_session_id = ${session}`)),
+    issues: Number(
+      runSql(
+        `SELECT count(*) FROM payment_issues i JOIN checkouts c ON c.id = i.checkout_id ` +
+          `WHERE c.customer_session_id = ${session}`,
+      ),
+    ),
+  };
+}

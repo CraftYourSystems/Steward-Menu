@@ -50,7 +50,8 @@ src/
 │   ├── env.ts                     # NEXT_PUBLIC_API_BASE_URL validation
 │   ├── format/money.ts            # paise → INR display
 │   ├── navigation.ts              # leaveForPayment: the one full-page navigation to the gateway (S4)
-│   └── realtime/connection.ts     # the customer WebSocket: dedupe, resync, backoff, 4440 (S6)
+│   └── realtime/                  # connection.ts: the customer WebSocket (dedupe, resync, backoff, 4440, S6);
+│                                  #   use-customer-realtime.ts: the hook for the order and return pages (S7)
 ├── components/ui/                 # Button, StatePanel, ErrorState, EmptyState, Skeleton, Money
 ├── styles/tokens.css              # Steward brand primitives
 └── test/                          # MSW handlers, factories, mock API, setup (never shipped)
@@ -122,5 +123,12 @@ e2e/real-backend/                  # Playwright against a running FastAPI
 4. **Completed** ends the placing session (F1-37): the backend sends the Completed event and closes the socket with `4440`; the API then refuses this session, so the page keeps the last order it read, marked Completed (the only time an event's status is shown, after the server ended access). A same-table rescan starts afresh. A grant keeps reading the order until its link expires.
 5. **Mock API.** The mock keeps orders, links and grants like the backend and serves `/ws/customer` (`ws` package, never bundled). Mock-only control routes stand in for staff and the SMS: `POST /mock-control/orders/{ref}/advance`, `GET …/link`, `POST …/expire`.
 6. **Real-backend E2E.** Staff act through the backend's transition command (`e2e/real-backend/backend-cli.ts`); the suite mints a link exactly like the SMS's in the local database (SMS bodies are cleared once sent).
+
+## S7 (corrective slice)
+
+1. **Realtime placement (DoD 16).** While a payment is in progress the payment return page opens the customer WebSocket (`useCustomerRealtime`, shared with the order page). The backend sends `order.placed` and `checkout.updated` on the paying session's checkout channel; each event, and every (re)connect, asks for the payment status at once through the polling hook's `pollNow` (the status read is never customer activity). Polling stays the fallback: with the socket down the page still goes on.
+2. **Rescans at a deactivated table.** The backend resumes a same-table session past the cart stage, so the session boundary sends a paying, placed or paid-not-placed customer where they belong even after the table was deactivated; a newcomer sees "Table unavailable".
+3. **Paid-not-placed sessions** close on the backend after 30 idle minutes; the next request is a `401`, and the boundary starts afresh like any ended session.
+4. **Tests.** Vitest gives every page an inert fake socket (`src/test/setup.ts`); tests drive their own. The real-backend suite adds `customer-recovery.spec.ts` (Fail → Retry → placed; Fail → Review / change order → placed; realtime placement; polling fallback; deactivated table). Steward-Backend CI runs the real-backend suite (job `customer-e2e`).
 
 The original prototype in this repository's history is a visual reference only, never a source of behavior.
