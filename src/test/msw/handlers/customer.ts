@@ -131,6 +131,21 @@ export function onMockOrderEvent(listener: (event: MockOrderEvent) => void): () 
   return () => orderListeners.delete(listener);
 }
 
+/** S7: `order.placed`, heard by the paying session's socket (its checkout channel). */
+export type MockPlacedEvent = {
+  event_id: string;
+  type: 'order.placed';
+  occurred_at: string;
+  order_id: string;
+};
+const placementListeners = new Set<(sessionValue: string, event: MockPlacedEvent) => void>();
+export function onMockPlacement(
+  listener: (sessionValue: string, event: MockPlacedEvent) => void,
+): () => void {
+  placementListeners.add(listener);
+  return () => placementListeners.delete(listener);
+}
+
 function orderRef(n: number): string {
   return `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 }
@@ -217,6 +232,8 @@ export function mockSocketAccess(cookieHeader: string | undefined) {
   return {
     sessionOrderId: sessionOrder(session)?.id ?? null,
     grantOrderId: grantedOrder(cookieHeader)?.id ?? null,
+    // S7: a session in the payment stage hears its placement.
+    payingSessionValue: session && states.get(session.value)?.paying ? session.value : null,
   };
 }
 
@@ -473,6 +490,15 @@ function confirmSuccess(state: MockState, attempt: MockAttempt, scenario: MockSc
       secret: `mockLinkSecret${placement.orderId.slice(-4)}`,
       linkExpired: false,
     });
+    if (sessionValue) {
+      const event: MockPlacedEvent = {
+        event_id: `mock-event-${nextEvent++}`,
+        type: 'order.placed',
+        occurred_at: placement.placedAt,
+        order_id: placement.orderId,
+      };
+      placementListeners.forEach((listener) => listener(sessionValue, event));
+    }
   }
 }
 

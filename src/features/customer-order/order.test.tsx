@@ -35,7 +35,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  setRealtimeSocketFactory(undefined);
   mswServer.events.removeAllListeners();
 });
 

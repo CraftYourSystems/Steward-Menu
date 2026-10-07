@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { isUnauthorized } from '@/features/customer-session/session-context';
 import { fetchCheckoutStatus } from './api';
 import type { CheckoutPaymentState } from './schemas';
@@ -24,6 +24,10 @@ export function pollDelay(index: number): number {
  * Polls `GET /customer/checkout/{id}/status` with backoff while `active`. Each
  * answer goes to `onState`; a 401 goes to `onSessionEnded` and stops polling.
  * Other failures (network, 429, 5xx) only wait for the next, longer delay.
+ *
+ * Returns `pollNow` (S7): a realtime event or reconnect asks for the status at
+ * once instead of at the next delay. It reads the same endpoint, which is never
+ * customer activity, and the backoff continues afterwards.
  */
 export function usePaymentStatusPolling(
   checkoutId: string | null,
@@ -35,6 +39,7 @@ export function usePaymentStatusPolling(
   useEffect(() => {
     handlers.current = { onState, onSessionEnded };
   });
+  const trigger = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     if (!checkoutId || !active) return;
@@ -46,7 +51,11 @@ export function usePaymentStatusPolling(
       timer = setTimeout(() => void poll(), pollDelay(index));
       index += 1;
     };
+    let inFlight = false;
+    let again = false;
     const poll = async () => {
+      inFlight = true;
+      again = false;
       try {
         const state = await fetchCheckoutStatus(checkoutId, { signal: controller.signal });
         if (controller.signal.aborted) return;
@@ -57,14 +66,30 @@ export function usePaymentStatusPolling(
           handlers.current.onSessionEnded();
           return;
         }
+      } finally {
+        inFlight = false;
       }
-      schedule();
+      if (again) void poll();
+      else schedule();
+    };
+
+    // An answer already on its way may predate the event: ask once more after it.
+    trigger.current = () => {
+      if (inFlight) {
+        again = true;
+        return;
+      }
+      clearTimeout(timer);
+      void poll();
     };
 
     schedule();
     return () => {
+      trigger.current = null;
       controller.abort();
       clearTimeout(timer);
     };
   }, [checkoutId, active]);
+
+  return useCallback(() => trigger.current?.(), []);
 }

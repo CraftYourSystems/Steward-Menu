@@ -18,6 +18,7 @@ import {
 } from '@/features/customer-session/session-context';
 import { ApiError, userMessageFor } from '@/lib/api/errors';
 import { leaveForPayment } from '@/lib/navigation';
+import { useCustomerRealtime } from '@/lib/realtime/use-customer-realtime';
 import { fetchCheckout, initiatePayment, releaseCheckout } from '../api';
 import {
   CANT_TAKE_ORDERS,
@@ -60,6 +61,10 @@ export type PaymentNotice =
  * placed**, and the customer goes on to the order page (S6) with the token,
  * items, total and live status; or **paid but not placed** (F1-22): the refund
  * notice, with no order and no token.
+ *
+ * While the payment is in progress the page also listens on the customer
+ * WebSocket (S7): `order.placed` arrives the moment the backend places the
+ * order, without waiting for the next poll.
  */
 export function PaymentReturnPage() {
   const { qrCode, reportSessionEnded, reportSessionWorking, reportSessionStage } =
@@ -105,7 +110,7 @@ export function PaymentReturnPage() {
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: customerKeys.checkout(qrCode) });
 
-  usePaymentStatusPolling(
+  const pollNow = usePaymentStatusPolling(
     paying?.checkoutId ?? null,
     awaiting,
     (state: CheckoutPaymentState) => {
@@ -119,6 +124,17 @@ export function PaymentReturnPage() {
     },
     reportSessionEnded,
   );
+
+  // Realtime (S7, DoD 16): while the payment is in progress, this session's socket
+  // hears `order.placed` and `checkout.updated` for its checkout (the backend picks
+  // the channel). Each event, and every (re)connect, asks for the payment status at
+  // once; polling above stays the fallback, so nothing depends on the socket.
+  useCustomerRealtime(awaiting, {
+    onResync: pollNow,
+    onEvent: (message) => {
+      if (message.type === 'order.placed' || message.type === 'checkout.updated') pollNow();
+    },
+  });
 
   const show = (problem: PaymentProblem) => {
     switch (problem.kind) {

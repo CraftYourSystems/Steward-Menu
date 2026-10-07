@@ -1,17 +1,16 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { getPublicEnv } from '@/lib/env';
+import { useState } from 'react';
 import {
-  connectCustomerRealtime,
-  customerSocketUrl,
-  type RealtimeStatus,
-  type SocketLike,
-} from '@/lib/realtime/connection';
+  useCustomerRealtime,
+  type CustomerRealtimeStatus,
+} from '@/lib/realtime/use-customer-realtime';
 import { RealtimeEventSchema, type OrderStatus } from './schemas';
 
+export { setRealtimeSocketFactory } from '@/lib/realtime/use-customer-realtime';
+
 export type OrderRealtime = {
-  status: RealtimeStatus | 'off';
+  status: CustomerRealtimeStatus;
   /**
    * The last status hint for this order from an event. Never shown on its own:
    * only once the server has ended this browser's access (`4440`) and the API
@@ -27,12 +26,6 @@ type Handlers = {
   onAccessEnded: () => void;
 };
 
-/** Test seam: Vitest swaps in a fake socket. */
-let socketFactory: ((url: string) => SocketLike) | undefined;
-export function setRealtimeSocketFactory(factory: ((url: string) => SocketLike) | undefined) {
-  socketFactory = factory;
-}
-
 /**
  * Live status for one order page (F-01 S6; technical design §25, §26). While
  * `enabled`, it keeps a customer WebSocket open; every event for this order and
@@ -43,33 +36,16 @@ export function useOrderRealtime(
   enabled: boolean,
   handlers: Handlers,
 ): OrderRealtime {
-  const [status, setStatus] = useState<RealtimeStatus | 'off'>('off');
   const [lastHint, setLastHint] = useState<OrderStatus | null>(null);
-  const latest = useRef(handlers);
-  useEffect(() => {
-    latest.current = handlers;
+  const status = useCustomerRealtime(enabled, {
+    onResync: handlers.onChange,
+    onAccessEnded: handlers.onAccessEnded,
+    onEvent: (message) => {
+      const event = RealtimeEventSchema.safeParse(message);
+      if (!event.success || event.data.order_id !== orderRef) return;
+      if (event.data.order_status) setLastHint(event.data.order_status);
+      handlers.onChange();
+    },
   });
-
-  useEffect(() => {
-    if (!enabled) return;
-    const connection = connectCustomerRealtime({
-      url: customerSocketUrl(getPublicEnv().NEXT_PUBLIC_API_BASE_URL),
-      createSocket: socketFactory,
-      onStatus: setStatus,
-      onResync: () => latest.current.onChange(),
-      onAccessEnded: () => latest.current.onAccessEnded(),
-      onEvent: (message) => {
-        const event = RealtimeEventSchema.safeParse(message);
-        if (!event.success || event.data.order_id !== orderRef) return;
-        if (event.data.order_status) setLastHint(event.data.order_status);
-        latest.current.onChange();
-      },
-    });
-    return () => {
-      connection.close();
-      setStatus('off');
-    };
-  }, [enabled, orderRef]);
-
   return { status, lastHint };
 }

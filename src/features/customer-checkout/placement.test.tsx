@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { leaveForPayment } from '@/lib/navigation';
+import { setRealtimeSocketFactory } from '@/lib/realtime/use-customer-realtime';
+import { FakeSocket } from '@/test/fake-socket';
 import { buildEnteredSession, MOCK_DISHES, MOCK_QR } from '@/test/factories/customer';
 import { useCookielessMockDevice } from '@/test/msw/handlers/customer';
 import { selectMockScenario } from '@/test/msw/mock-scenario';
@@ -58,7 +60,7 @@ async function paying(): Promise<string> {
   return ((await pay.json()) as { data: { redirect_url: string } }).data.redirect_url;
 }
 
-async function choose(gatewayUrl: string, action: 'pay' | 'pay_no_webhook' | 'pending') {
+async function choose(gatewayUrl: string, action: 'pay' | 'pay_no_webhook' | 'pending' | 'fail') {
   await fetch(gatewayUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -108,6 +110,74 @@ describe('Order placed (P1, S6)', () => {
     await sentToOrderPage();
     expect(routerPush).not.toHaveBeenCalledWith(RETURN);
     expect(screen.queryByRole('button', { name: /^Add / })).toBeNull();
+  });
+});
+
+describe('order.placed in realtime (S7, DoD 16)', () => {
+  let sockets: FakeSocket[];
+
+  beforeEach(() => {
+    sockets = [];
+    setRealtimeSocketFactory((url) => {
+      const socket = new FakeSocket(url);
+      sockets.push(socket);
+      return socket;
+    });
+  });
+
+  function statusReads(requests: { path: string }[]) {
+    return requests.filter((r) => r.path.endsWith('/status')).length;
+  }
+
+  it('the paying session hears order.placed and goes on at once, before any poll', async () => {
+    const gateway = await paying();
+    await choose(gateway, 'pending'); // the customer is back; the payment is unresolved
+    const requests = recordRequests();
+    await openReturnPage();
+    expect(await screen.findByRole('heading', { name: 'Confirming payment…' })).toBeInTheDocument();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    const socket = sockets[0]!;
+    expect(socket.url).toBe('ws://api.test/ws/customer');
+    socket.open(); // resync: one immediate status read, still awaiting
+    await waitFor(() => expect(statusReads(requests)).toBe(1));
+
+    await choose(gateway, 'pay'); // the verified payment places the order meanwhile
+    socket.message({ event_id: 'e1', type: 'order.placed', order_id: 'o', occurred_at: 'now' });
+    socket.message({ event_id: 'e1', type: 'order.placed', order_id: 'o', occurred_at: 'now' });
+    await waitFor(
+      () => expect(routerPush.mock.calls.flat().some((h) => /\/orders\//.test(h))).toBe(true),
+      {
+        timeout: 1_500, // the first poll would wait 2 s
+      },
+    );
+    expect(statusReads(requests)).toBe(2); // the resync and the event; no scheduled poll
+  });
+
+  it('without the socket, polling still finds the placement', async () => {
+    const gateway = await paying();
+    await choose(gateway, 'pending');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await openReturnPage();
+    await waitFor(() => expect(sockets).toHaveLength(1));
+    sockets[0]!.serverClose(1006); // the socket never comes up
+    await choose(gateway, 'pay');
+    expect(routerPush).not.toHaveBeenCalled();
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    await waitFor(() =>
+      expect(routerPush.mock.calls.flat().some((h) => /\/orders\//.test(h))).toBe(true),
+    );
+  });
+
+  it('opens no socket once nothing is awaited', async () => {
+    const gateway = await paying();
+    await choose(gateway, 'fail');
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    await openReturnPage();
+    await act(() => vi.advanceTimersByTimeAsync(2_100));
+    expect(
+      await screen.findByRole('heading', { name: 'Payment not completed' }),
+    ).toBeInTheDocument();
+    await waitFor(() => expect(sockets.every((socket) => socket.closedWith !== null)).toBe(true));
   });
 });
 

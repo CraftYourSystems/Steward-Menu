@@ -11,7 +11,8 @@
  *
  * It also serves the customer WebSocket `/ws/customer` (F-01 S6) like FastAPI:
  * the handshake needs an `Origin`; the subscription comes from the cookies
- * only (the session's order, the grant's order); events are identifiers and a
+ * only (a paying session's placement, S7; the session's order; the grant's
+ * order); events are identifiers and a
  * status hint; a session's socket closes with `4440` after its order completes,
  * and one with no order access closes with `4440` straight away.
  */
@@ -19,7 +20,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { getResponse } from 'msw';
 import { WebSocketServer } from 'ws';
 import { handlers } from '../msw/handlers';
-import { mockSocketAccess, onMockOrderEvent } from '../msw/handlers/customer';
+import { mockSocketAccess, onMockOrderEvent, onMockPlacement } from '../msw/handlers/customer';
 
 const port = Number(process.env.MOCK_API_PORT ?? 8788);
 
@@ -88,10 +89,14 @@ server.on('upgrade', (req, socket, head) => {
   sockets.handleUpgrade(req, socket, head, (ws) => {
     const access = mockSocketAccess(req.headers.cookie);
     const scopes = new Set([access.sessionOrderId, access.grantOrderId].filter(Boolean));
-    if (scopes.size === 0) {
+    if (scopes.size === 0 && !access.payingSessionValue) {
       ws.close(CLOSE_ACCESS_ENDED, 'customer_access_ended');
       return;
     }
+    const stopPlacement = onMockPlacement((sessionValue, event) => {
+      if (sessionValue === access.payingSessionValue) ws.send(JSON.stringify(event));
+    });
+    ws.on('close', stopPlacement);
     const stop = onMockOrderEvent((event) => {
       if (!scopes.has(event.order_id)) return;
       ws.send(JSON.stringify(event));
