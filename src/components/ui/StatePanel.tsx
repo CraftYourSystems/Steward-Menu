@@ -20,16 +20,18 @@ export function StatePanel({
   headingLevel: Heading = 'h2',
 }: StatePanelProps) {
   const toneClasses =
-    tone === 'danger' ? 'border-danger bg-danger-subtle' : 'border-border bg-surface-muted';
+    tone === 'danger' ? 'border-danger bg-danger-subtle' : 'border-border bg-surface shadow-sm';
 
   return (
-    <section role={role} className={`rounded-lg border px-6 py-10 text-center ${toneClasses}`}>
+    <section role={role} className={`rounded-3xl border px-6 py-10 text-center ${toneClasses}`}>
       <Heading
-        className={`text-base font-semibold ${tone === 'danger' ? 'text-danger' : 'text-text'}`}
+        className={`font-display text-xl leading-tight font-bold tracking-tight ${tone === 'danger' ? 'text-danger' : 'text-text'}`}
       >
         {title}
       </Heading>
-      {description ? <div className="mt-2 text-sm text-text-muted">{description}</div> : null}
+      {description ? (
+        <div className="mt-3 text-sm leading-relaxed text-text-muted">{description}</div>
+      ) : null}
       {action ? <div className="mt-6 flex justify-center">{action}</div> : null}
     </section>
   );

@@ -66,13 +66,19 @@ export function CustomerMenuPage() {
     return (
       <div className="flex items-center gap-3">
         {count > 0 ? (
-          <span className="text-sm text-text-muted tabular-nums">{count} in cart</span>
+          <span className="rounded-full bg-brand-surface px-2.5 py-1 text-xs font-semibold text-brand tabular-nums">
+            {count} in cart
+          </span>
         ) : null}
         <Button
+          variant="soft"
+          size="sm"
+          className="gap-1"
           aria-label={`Add ${item.name}`}
           disabled={changes.isPending}
           onClick={() => changes.add(item.id)}
         >
+          <span aria-hidden="true">+</span>
           Add
         </Button>
       </div>
@@ -83,18 +89,22 @@ export function CustomerMenuPage() {
     <>
       {hasDishes ? (
         <div className="mb-6">
-          <label htmlFor="menu-search" className="mb-1 block text-sm font-medium text-text">
+          <label htmlFor="menu-search" className="sr-only">
             Search dishes
           </label>
-          <input
-            id="menu-search"
-            type="search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Dish name"
-            autoComplete="off"
-            className="min-h-10 w-full rounded-md border border-border-strong bg-surface px-3 text-base text-text"
-          />
+          {/* The prototype's glass capsule; the focus outline moves to the capsule. */}
+          <div className="flex items-center gap-3 rounded-3xl border border-glass-border bg-surface px-4 py-3 shadow-glass focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-focus">
+            <SearchIcon />
+            <input
+              id="menu-search"
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search dishes by name"
+              autoComplete="off"
+              className="min-h-6 w-full bg-transparent text-base font-medium text-text placeholder:font-normal placeholder:text-text-muted focus-visible:outline-none"
+            />
+          </div>
         </div>
       ) : null}
       <CartProblemNotice problem={changes.problem} onDismiss={changes.clearProblem} />
@@ -123,13 +133,31 @@ function quantitiesByDish(lines: CartLine[]): Map<string, number> {
   return counts;
 }
 
+function SearchIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      className="size-4 shrink-0 text-text-muted"
+    >
+      <circle cx="9" cy="9" r="6" />
+      <path d="m14 14 4 4" />
+    </svg>
+  );
+}
+
 function MenuLoading() {
   return (
     <div aria-busy="true" aria-live="polite">
       <p className="sr-only">Loading the menu…</p>
+      <Skeleton className="h-12 w-full rounded-3xl" />
       <div className="mt-8 space-y-4">
         {[0, 1, 2, 3].map((row) => (
-          <Skeleton key={row} className="h-12 w-full" />
+          <Skeleton key={row} className="h-24 w-full" />
         ))}
       </div>
     </div>

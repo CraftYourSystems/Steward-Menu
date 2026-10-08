@@ -1,36 +1,73 @@
 /*
  * Steward design tokens — the ONLY place raw colour values may appear.
  *
- * Layer 1 (this file): primitives.
+ * Layer 1 (this file): primitives, taken from the locked prototype's token layer
+ * (commit d2fba7a, `src/tokens.css`).
  * Layer 2 (globals.css @theme): semantic tokens that components consume.
  *
+ * Where a prototype value fails WCAG AA for the way it is used, the accessible
+ * value wins and the prototype value is not used for that purpose:
+ * - prototype gray-60 text (3.1:1 on white) → body text uses gray-80;
+ * - Ocean Mist text (2.8:1) → eyebrow labels use Teal;
+ * - the light gradient stops behind white button text (#0A8A80 4.2:1,
+ *   #3B82F6 3.7:1) → button gradients end at #0A7A71 and #2563EB;
+ * - gray-40 control borders (1.7:1) → controls use gray-60 (3.1:1, WCAG 1.4.11);
+ * - #DC2626 text on its tint (4.4:1) → danger stays #B42318.
+ *
  * Contrast (WCAG 2.x, measured against the paired background):
- *   ink on white 16.6 · teal on white 7.6 · white on teal 7.6
- *   neutral-600 on white 6.6 / on neutral-50 6.1
- *   confirmation-700 on white 5.4 / on confirmation-50 4.7
- *   warning-700 on white 5.4 / on warning-50 4.9
- *   danger-700 on white 6.6 / on danger-50 5.8
- *   mist on white 2.8 — never use Ocean Mist for body text.
+ *   ink on white 16.6 · ink on gray-10 15.6 · teal on white 7.6 · white on teal 7.6
+ *   gray-80 on white 7.8 / on gray-10 7.4 / on teal-10 7.3
+ *   teal on teal-10 7.1 / on teal-20 6.2
+ *   white on #0A7A71 5.2 · white on blue 5.2 · blue on blue-10 4.7
+ *   danger-700 on white 6.6 / on danger-50 5.8 · warning-700 on white 5.4
+ *   gray-60 (control borders) on white 3.1
  */
 :root {
-  /* Steward brand primitives (CLAUDE.md §10). */
+  /* Steward brand primitives. */
   --steward-ink: #17201e;
   --steward-teal: #075e57;
   --steward-mist: #55a998;
   --steward-blue: #2563eb;
   --steward-white: #ffffff;
 
-  /* Neutral primitives, derived from Ink for a calm, cohesive surface scale. */
-  --steward-neutral-50: #f3f6f5;
-  --steward-neutral-200: #ccd6d3;
-  --steward-neutral-400: #8a9894;
-  --steward-neutral-600: #52605c;
+  /* Prototype tints and neutrals. */
+  --steward-ink-80: #2b3d39;
+  --steward-teal-10: #f0f8f7;
+  --steward-teal-20: #d4edea;
+  --steward-teal-40: #8ac8c3;
+  --steward-teal-60: #0a7a71;
+  --steward-teal-90: #054d47;
+  --steward-blue-10: #eff4fe;
+  --steward-blue-80: #1d4ed8;
+  --steward-gray-10: #f7f8f8;
+  --steward-gray-20: #eceeed;
+  --steward-gray-60: #8c9492;
+  --steward-gray-80: #4a5452;
 
   /* Status primitives. Exposed to components only through semantic tokens. */
-  --steward-confirmation-700: #1b7a43;
-  --steward-confirmation-50: #e6f4ec;
   --steward-warning-700: #9a5b00;
   --steward-warning-50: #fdf1dc;
   --steward-danger-700: #b42318;
   --steward-danger-50: #fdecea;
+
+  /* Prototype gradients (button stops adjusted for contrast, see above). */
+  --steward-gradient-brand: linear-gradient(135deg, #075e57 0%, #0a7a71 100%);
+  --steward-gradient-confirm: linear-gradient(135deg, #1d4ed8 0%, #2563eb 100%);
+  --steward-gradient-card: linear-gradient(135deg, #075e57 0%, #0a665e 55%, #0a7a71 100%);
+
+  /* Prototype elevation (ink- and teal-tinted shadows). */
+  --steward-shadow-xs: 0 1px 2px rgb(23 32 30 / 0.06);
+  --steward-shadow-sm: 0 2px 8px rgb(23 32 30 / 0.08);
+  --steward-shadow-md: 0 4px 16px rgb(23 32 30 / 0.1);
+  --steward-shadow-glass: 0 4px 20px rgb(7 94 87 / 0.06);
+  --steward-shadow-brand: 0 4px 20px rgb(7 94 87 / 0.35);
+  --steward-shadow-confirm: 0 4px 20px rgb(37 99 235 / 0.35);
+  --steward-shadow-bar: 0 16px 40px -4px rgb(7 94 87 / 0.5), 0 6px 16px rgb(0 0 0 / 0.2);
+  --steward-shadow-ring-brand: 0 0 0 3px rgb(7 94 87 / 0.1);
+
+  /* Liquid-glass surfaces. */
+  --steward-glass: rgb(255 255 255 / 0.85);
+  --steward-glass-border: rgb(255 255 255 / 0.8);
+  --steward-glass-on-brand: rgb(255 255 255 / 0.22);
+  --steward-glass-on-brand-border: rgb(255 255 255 / 0.45);
 }

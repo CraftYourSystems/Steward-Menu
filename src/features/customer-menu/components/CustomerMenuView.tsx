@@ -45,14 +45,19 @@ export function CustomerMenuView({
   return (
     <div className="space-y-8">
       {sections.map((section) => (
-        <section key={section.key} aria-labelledby={`menu-section-${section.key}`}>
+        // The prototype's full-width rows: the section cancels `<main>`'s side padding.
+        <section
+          key={section.key}
+          aria-labelledby={`menu-section-${section.key}`}
+          className="-mx-5"
+        >
           <h2
             id={`menu-section-${section.key}`}
-            className="border-b border-border pb-2 text-lg font-semibold text-text"
+            className="mb-4 px-5 text-xl leading-tight font-bold tracking-tight break-words text-text"
           >
             {section.title}
           </h2>
-          <ul className="divide-y divide-border">
+          <ul className="divide-y divide-border border-y border-border bg-surface">
             {section.items.map((item) => (
               <MenuItemRow key={item.id} item={item} action={renderAction?.(item)} />
             ))}
@@ -65,18 +70,16 @@ export function CustomerMenuView({
 
 function MenuItemRow({ item, action }: { item: CustomerMenuItem; action: ReactNode }) {
   return (
-    <li className="flex items-start justify-between gap-4 py-4">
-      <div className="min-w-0">
-        <p className="font-medium break-words text-text">{item.name}</p>
-        {item.preparationTimeMinutes !== null ? (
-          <p className="mt-1 text-sm text-text-muted">
-            <span className="sr-only">Approximate preparation time: </span>~
-            {item.preparationTimeMinutes} min
-          </p>
-        ) : null}
-      </div>
-      <div className="flex shrink-0 flex-col items-end gap-2">
-        <p className="font-medium text-text">
+    <li className="px-5 py-5">
+      <p className="font-semibold tracking-tight break-words text-text">{item.name}</p>
+      {item.preparationTimeMinutes !== null ? (
+        <p className="mt-1 text-xs text-text-muted">
+          <span className="sr-only">Approximate preparation time: </span>~
+          {item.preparationTimeMinutes} min
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="font-bold tracking-tight text-text">
           <Money amountMinor={item.basePriceMinor} />
         </p>
         {action}

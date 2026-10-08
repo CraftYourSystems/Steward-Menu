@@ -8,7 +8,7 @@ export function Skeleton({ className = '' }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"
-      className={`rounded-md bg-surface-muted motion-safe:animate-pulse ${className}`}
+      className={`rounded-2xl bg-border motion-safe:animate-pulse ${className}`}
     />
   );
 }

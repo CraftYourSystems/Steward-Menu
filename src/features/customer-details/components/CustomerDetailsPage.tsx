@@ -1,12 +1,13 @@
 'use client';
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { PageTitleBar } from '@/components/ui/PageTitleBar';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { StickyFooter } from '@/components/ui/StickyFooter';
 import { customerKeys } from '@/features/customer-session/query-keys';
 import {
   isUnauthorized,
@@ -40,22 +41,16 @@ export function CustomerDetailsPage() {
 
   return (
     <section aria-labelledby="details-title">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 id="details-title" className="text-lg font-semibold text-text">
-          Your details
-        </h2>
-        <Link
-          href={`/t/${encodeURIComponent(qrCode)}/cart`}
-          className="text-sm font-medium text-brand underline"
-        >
-          Back to cart
-        </Link>
-      </div>
+      <PageTitleBar
+        id="details-title"
+        title="Your details"
+        back={{ href: `/t/${encodeURIComponent(qrCode)}/cart`, label: 'Back to cart' }}
+      />
       {details.isPending || isUnauthorized(details.error) ? (
         <div aria-busy="true" aria-live="polite">
           <p className="sr-only">Loading your details…</p>
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="mt-4 h-10 w-full" />
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="mt-4 h-12 w-full" />
         </div>
       ) : details.isError ? (
         <ErrorState
@@ -122,7 +117,7 @@ function DetailsForm({ saved }: { saved: CustomerDetails }) {
       {problem?.kind === 'rate_limited' ? (
         <p
           role="alert"
-          className="rounded-lg border border-danger bg-danger-subtle px-4 py-3 text-sm"
+          className="rounded-2xl border border-danger bg-danger-subtle px-4 py-3 text-sm"
         >
           {problem.retryAfterSeconds
             ? `Too many attempts. Please wait ${problem.retryAfterSeconds} seconds and try again.`
@@ -132,7 +127,7 @@ function DetailsForm({ saved }: { saved: CustomerDetails }) {
       {problem?.kind === 'error' ? (
         <div
           role="alert"
-          className="rounded-lg border border-danger bg-danger-subtle px-4 py-3 text-sm"
+          className="rounded-2xl border border-danger bg-danger-subtle px-4 py-3 text-sm"
         >
           <p>{problem.message}</p>
           {problem.requestId ? (
@@ -141,29 +136,33 @@ function DetailsForm({ saved }: { saved: CustomerDetails }) {
         </div>
       ) : null}
 
-      <Field
-        id="customer-name"
-        label="Name"
-        value={name}
-        onChange={setName}
-        error={fieldError('name')}
-        autoComplete="name"
-        hint={undefined}
-      />
-      <Field
-        id="customer-mobile"
-        label="Mobile number"
-        value={mobile}
-        onChange={setMobile}
-        error={fieldError('mobile')}
-        autoComplete="tel-national"
-        inputMode="tel"
-        hint="A 10-digit Indian mobile number, for example 98765 43210. No verification code is needed."
-      />
+      <div className="space-y-5 rounded-3xl bg-surface p-5 shadow-sm">
+        <Field
+          id="customer-name"
+          label="Name"
+          value={name}
+          onChange={setName}
+          error={fieldError('name')}
+          autoComplete="name"
+          hint={undefined}
+        />
+        <Field
+          id="customer-mobile"
+          label="Mobile number"
+          value={mobile}
+          onChange={setMobile}
+          error={fieldError('mobile')}
+          autoComplete="tel-national"
+          inputMode="tel"
+          hint="A 10-digit Indian mobile number, for example 98765 43210. No verification code is needed."
+        />
+      </div>
 
-      <Button type="submit" disabled={save.isPending} className="w-full">
-        {save.isPending ? 'Saving…' : 'Continue to review'}
-      </Button>
+      <StickyFooter>
+        <Button type="submit" disabled={save.isPending} className="w-full">
+          {save.isPending ? 'Saving…' : 'Continue to review'}
+        </Button>
+      </StickyFooter>
     </form>
   );
 }
@@ -192,7 +191,7 @@ function Field({
     .join(' ');
   return (
     <div>
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-text">
+      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-text">
         {label}
       </label>
       <input
@@ -204,15 +203,15 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         aria-invalid={error ? true : undefined}
         aria-describedby={describedBy || undefined}
-        className={`min-h-10 w-full rounded-md border bg-surface px-3 text-base text-text ${error ? 'border-danger' : 'border-border-strong'}`}
+        className={`min-h-12 w-full rounded-xl border-[1.5px] bg-surface px-4 text-base text-text focus:border-brand focus:shadow-ring-brand ${error ? 'border-danger' : 'border-border-strong'}`}
       />
       {hint ? (
-        <p id={`${id}-hint`} className="mt-1 text-sm text-text-muted">
+        <p id={`${id}-hint`} className="mt-1.5 text-xs leading-relaxed text-text-muted">
           {hint}
         </p>
       ) : null}
       {error ? (
-        <p id={`${id}-error`} className="mt-1 text-sm font-medium text-danger">
+        <p id={`${id}-error`} className="mt-1.5 text-sm font-semibold text-danger">
           {error}
         </p>
       ) : null}

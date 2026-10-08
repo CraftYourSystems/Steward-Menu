@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
+import { RestaurantHeader } from '@/components/ui/RestaurantHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatePanel } from '@/components/ui/StatePanel';
 import { customerKeys } from '@/features/customer-session/query-keys';
@@ -193,37 +194,39 @@ function OrderView({
   const copy = STATUS_COPY[order.status];
   const reached = new Map(order.history.map((entry) => [entry.state, entry.occurredAt]));
   return (
-    <article aria-labelledby="order-title" className="space-y-6">
-      <header>
-        <h1 className="text-2xl font-semibold text-text">{order.restaurantName}</h1>
-        <p className="mt-1 text-sm text-text-muted">Table {order.tableNumber}</p>
-      </header>
+    <article aria-labelledby="order-title" className="space-y-4">
+      <RestaurantHeader restaurantName={order.restaurantName} tableNumber={order.tableNumber} />
 
-      <section className="rounded-lg border border-border p-5 text-center">
-        <h2 id="order-title" className="text-lg font-semibold text-text">
+      {/* The prototype's order header card. */}
+      <section className="rounded-3xl bg-brand bg-gradient-card p-6 text-text-inverse shadow-brand">
+        <h2 id="order-title" className="text-xs font-semibold tracking-[0.04em] uppercase">
           Your order
         </h2>
-        <p className="mt-3 text-sm text-text-muted">Your token</p>
-        <p
-          className="text-4xl font-semibold text-text tabular-nums"
-          aria-label={`Token ${order.tokenNumber}`}
-        >
-          {order.tokenNumber}
-        </p>
-        <p className="mt-2 text-sm text-text-muted">
-          Placed at <time dateTime={order.placedAt}>{time(order.placedAt)}</time>
-        </p>
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <p className="text-sm">Your token</p>
+            <p
+              className="mt-1 font-display text-5xl leading-none font-bold tabular-nums"
+              aria-label={`Token ${order.tokenNumber}`}
+            >
+              {order.tokenNumber}
+            </p>
+          </div>
+          <p className="text-sm">
+            Placed at <time dateTime={order.placedAt}>{time(order.placedAt)}</time>
+          </p>
+        </div>
       </section>
 
-      <section aria-labelledby="status-title" className="rounded-lg border border-border p-5">
-        <h2 id="status-title" className="text-base font-semibold text-text">
+      <section aria-labelledby="status-title" className="rounded-3xl bg-surface p-6 shadow-sm">
+        <h2 id="status-title" className="text-base font-bold tracking-tight text-text">
           Order status
         </h2>
         <div role="status" aria-label="Current status" className="mt-2">
-          <p className="text-xl font-semibold text-text">{copy.label}</p>
+          <p className="text-xl font-bold tracking-tight text-text">{copy.label}</p>
           <p className="text-sm text-text-muted">{copy.description}</p>
         </div>
-        <ol className="mt-4 space-y-2" aria-label="Progress">
+        <ol className="mt-6" aria-label="Progress">
           {ORDER_STATUSES.map((state) => (
             <Step
               key={state}
@@ -236,57 +239,60 @@ function OrderView({
         <LiveIndicator realtime={realtime} asOf={asOf} accessEnded={accessEnded} />
       </section>
 
-      <section aria-labelledby="items-title">
-        <h2 id="items-title" className="text-base font-semibold text-text">
+      <section aria-labelledby="items-title" className="rounded-3xl bg-surface p-5 shadow-sm">
+        <h2 id="items-title" className="text-base font-bold tracking-tight text-text">
           Items
         </h2>
         <ul className="mt-2 divide-y divide-border">
           {order.items.map((item, index) => (
-            <li key={index} className="flex items-start justify-between gap-4 py-2">
+            <li key={index} className="flex items-start justify-between gap-4 py-3 text-sm">
               <div className="min-w-0">
-                <p className="break-words text-text">
-                  {item.quantity} × {item.name}
+                <p className="font-medium break-words text-text">
+                  <span className="font-bold text-brand">{item.quantity} ×</span> {item.name}
                 </p>
                 {item.specialInstructions ? (
-                  <p className="text-sm break-words text-text-muted">
+                  <p className="mt-0.5 text-xs break-words text-text-muted italic">
                     Note: {item.specialInstructions}
                   </p>
                 ) : null}
               </div>
-              <p className="shrink-0 text-text">
+              <p className="shrink-0 font-semibold text-text">
                 <Money amountMinor={item.lineTotalMinor} />
               </p>
             </li>
           ))}
         </ul>
-      </section>
 
-      <section aria-labelledby="amounts-title" className="border-t border-border pt-3">
-        <h2 id="amounts-title" className="sr-only">
-          Amounts
-        </h2>
-        <dl className="space-y-1 text-sm">
-          <div className="flex justify-between text-text-muted">
-            <dt>Subtotal</dt>
-            <dd>
-              <Money amountMinor={order.subtotalMinor} />
-            </dd>
-          </div>
-          {order.taxes.map((tax, index) => (
-            <div key={index} className="flex justify-between text-text-muted">
-              <dt>{tax.label}</dt>
+        <section
+          aria-labelledby="amounts-title"
+          className="mt-2 border-t border-dashed border-border-strong pt-4"
+        >
+          <h2 id="amounts-title" className="sr-only">
+            Amounts
+          </h2>
+          <dl className="space-y-2 text-xs">
+            <div className="flex justify-between text-text-muted">
+              <dt>Subtotal</dt>
               <dd>
-                <Money amountMinor={tax.amountMinor} />
+                <Money amountMinor={order.subtotalMinor} />
               </dd>
             </div>
-          ))}
-          <div className="flex justify-between text-base font-semibold text-text">
-            <dt>Total paid</dt>
-            <dd>
-              <Money amountMinor={order.totalMinor} />
-            </dd>
-          </div>
-        </dl>
+            {order.taxes.map((tax, index) => (
+              <div key={index} className="flex justify-between text-text-muted">
+                <dt>{tax.label}</dt>
+                <dd>
+                  <Money amountMinor={tax.amountMinor} />
+                </dd>
+              </div>
+            ))}
+            <div className="flex justify-between border-t border-border pt-2 text-sm font-bold text-text">
+              <dt>Total paid</dt>
+              <dd>
+                <Money amountMinor={order.totalMinor} />
+              </dd>
+            </div>
+          </dl>
+        </section>
       </section>
     </article>
   );
@@ -303,25 +309,43 @@ function Step({
 }) {
   const done = statusRank(state) <= statusRank(current);
   const isCurrent = state === current;
+  const isLast = statusRank(state) === ORDER_STATUSES.length - 1;
+  // The prototype's timeline: ✓ for reached steps, a pulsing dot for the one in
+  // progress, a line down to the next step.
+  const inProgress = isCurrent && !isLast;
   return (
     <li
       aria-current={isCurrent ? 'step' : undefined}
-      className="flex items-center justify-between gap-3 text-sm"
+      className="relative flex items-start justify-between gap-3 pb-6 text-sm last:pb-0"
     >
-      <span className="flex items-center gap-2">
+      {isLast ? null : (
         <span
           aria-hidden="true"
-          className={`inline-block h-3 w-3 rounded-full border ${
-            done ? 'border-brand bg-brand' : 'border-border bg-surface'
+          className={`absolute top-7 bottom-0 left-[11px] w-0.5 ${
+            done && !isCurrent ? 'bg-brand' : 'bg-border'
           }`}
         />
-        <span className={done ? 'font-medium text-text' : 'text-text-muted'}>
+      )}
+      <span className="flex items-center gap-4">
+        <span
+          aria-hidden="true"
+          className={`relative flex size-6 shrink-0 items-center justify-center rounded-full text-[0.6875rem] font-bold text-brand-contrast ${
+            done ? 'bg-brand' : 'bg-border'
+          }`}
+        >
+          {inProgress ? (
+            <span className="size-2.5 rounded-full bg-surface motion-safe:animate-step-pulse" />
+          ) : done ? (
+            '✓'
+          ) : null}
+        </span>
+        <span className={done ? 'font-semibold text-text' : 'text-text-muted'}>
           {STATUS_COPY[state].label}
           <span className="sr-only">{done ? ' (done)' : ' (not yet)'}</span>
         </span>
       </span>
       {done && at ? (
-        <time dateTime={at} className="text-text-muted">
+        <time dateTime={at} className="pt-0.5 text-xs text-text-muted">
           {time(at)}
         </time>
       ) : null}
@@ -346,8 +370,18 @@ function LiveIndicator({
         ? null
         : 'Reconnecting…';
   return (
-    <p className="mt-4 flex flex-wrap justify-between gap-2 text-xs text-text-muted">
-      {label ? <span>{label}</span> : <span />}
+    <p className="mt-6 flex flex-wrap justify-between gap-2 border-t border-border pt-4 text-xs text-text-muted">
+      {label ? (
+        <span className="inline-flex items-center gap-1.5">
+          <span
+            aria-hidden="true"
+            className={`size-1.5 rounded-full ${realtime.status === 'live' ? 'bg-brand motion-safe:animate-step-pulse' : 'bg-border-strong'}`}
+          />
+          {label}
+        </span>
+      ) : (
+        <span />
+      )}
       {asOf ? <span>Status as of {time(asOf)}</span> : null}
     </p>
   );
@@ -375,8 +409,8 @@ function OrderLoading() {
     <div aria-busy="true" aria-live="polite">
       <p className="sr-only">Loading your order…</p>
       <Skeleton className="h-8 w-2/3" />
-      <Skeleton className="mt-6 h-32 w-full" />
-      <Skeleton className="mt-6 h-40 w-full" />
+      <Skeleton className="mt-6 h-36 w-full rounded-3xl" />
+      <Skeleton className="mt-4 h-56 w-full rounded-3xl" />
     </div>
   );
 }

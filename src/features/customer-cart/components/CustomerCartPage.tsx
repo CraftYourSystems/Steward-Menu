@@ -3,11 +3,13 @@
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
+import { PageTitleBar } from '@/components/ui/PageTitleBar';
 import { Skeleton } from '@/components/ui/Skeleton';
+import { StickyFooter } from '@/components/ui/StickyFooter';
 import { isUnauthorized, useCustomerSession } from '@/features/customer-session/session-context';
 import { ApiError, userMessageFor } from '@/lib/api/errors';
 import { useCart, useCartChanges } from '../hooks';
@@ -38,19 +40,16 @@ export function CustomerCartPage() {
 
   return (
     <section aria-labelledby="cart-title">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 id="cart-title" className="text-lg font-semibold text-text">
-          Your cart
-        </h2>
-        <Link href={base} className="text-sm font-medium text-brand underline">
-          Back to menu
-        </Link>
-      </div>
+      <PageTitleBar
+        id="cart-title"
+        title="Your cart"
+        back={{ href: base, label: 'Back to menu' }}
+      />
 
       {availabilityChanged && hasUnavailable ? (
         <div
           role="alert"
-          className="mb-4 rounded-lg border border-danger bg-danger-subtle px-4 py-3"
+          className="mb-4 rounded-2xl border border-danger bg-danger-subtle px-4 py-3"
         >
           <p className="text-sm text-text">
             Some dishes in your cart are no longer available. Remove them, then review your order
@@ -66,7 +65,7 @@ export function CustomerCartPage() {
           <p className="sr-only">Loading your cart…</p>
           <div className="space-y-4">
             {[0, 1, 2].map((row) => (
-              <Skeleton key={row} className="h-16 w-full" />
+              <Skeleton key={row} className="h-24 w-full" />
             ))}
           </div>
         </div>
@@ -82,17 +81,14 @@ export function CustomerCartPage() {
           title="Your cart is empty"
           description="Add dishes from the menu to start your order."
           action={
-            <Link
-              href={base}
-              className="inline-flex min-h-10 items-center rounded-md bg-brand px-4 text-sm font-medium text-brand-contrast hover:opacity-90"
-            >
+            <Link href={base} className={buttonClasses('primary')}>
               Browse the menu
             </Link>
           }
         />
       ) : (
         <>
-          <ul className="divide-y divide-border">
+          <ul className="-mx-5 divide-y divide-border border-y border-border bg-surface px-5">
             {cart.data.lines.map((line) => (
               <CartLineRow
                 key={line.id}
@@ -104,8 +100,8 @@ export function CustomerCartPage() {
               />
             ))}
           </ul>
-          <div className="mt-6 border-t border-border pt-4">
-            <p className="flex items-center justify-between text-base font-semibold text-text">
+          <div className="mt-6 rounded-3xl bg-surface px-5 py-5 shadow-sm">
+            <p className="flex items-center justify-between text-lg font-bold tracking-tight text-text">
               <span>Subtotal</span>
               <Money amountMinor={cart.data.subtotalMinor} />
             </p>
@@ -113,18 +109,17 @@ export function CustomerCartPage() {
               <p className="mt-1 text-sm text-text-muted">Unavailable dishes are not included.</p>
             ) : null}
           </div>
-          <div className="mt-6">
+          <StickyFooter>
             {hasUnavailable ? (
-              <p className="text-sm text-text-muted">Remove unavailable dishes to continue.</p>
+              <p className="text-center text-sm text-text-muted">
+                Remove unavailable dishes to continue.
+              </p>
             ) : (
-              <Link
-                href={`${base}/details`}
-                className="inline-flex min-h-10 w-full items-center justify-center rounded-md bg-brand px-4 text-sm font-medium text-brand-contrast hover:opacity-90"
-              >
+              <Link href={`${base}/details`} className={`${buttonClasses('primary')} w-full`}>
                 Continue
               </Link>
             )}
-          </div>
+          </StickyFooter>
         </>
       )}
     </section>
@@ -147,15 +142,17 @@ function CartLineRow({
   const label = lineLabel(line);
   const [editing, setEditing] = useState(false);
   return (
-    <li className="py-4" aria-label={label}>
+    <li className="py-5" aria-label={label}>
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <p className="font-medium break-words text-text">{line.name}</p>
-          <p className="mt-1 text-sm text-text-muted">
+          <p className="text-sm font-semibold break-words text-text">{line.name}</p>
+          <p className="mt-0.5 text-xs text-text-muted">
             <Money amountMinor={line.unitPriceMinor} /> each
           </p>
           {line.specialInstructions && !editing ? (
-            <p className="mt-1 text-sm break-words text-text">Note: {line.specialInstructions}</p>
+            <p className="mt-1 text-xs break-words text-text-muted italic">
+              Note: {line.specialInstructions}
+            </p>
           ) : null}
           {line.available ? null : (
             <p className="mt-1 text-sm font-medium text-danger">
@@ -164,7 +161,7 @@ function CartLineRow({
           )}
         </div>
         <p
-          className={`shrink-0 font-medium ${line.available ? 'text-text' : 'text-text-muted line-through'}`}
+          className={`shrink-0 text-sm font-bold ${line.available ? 'text-text' : 'text-text-muted line-through'}`}
         >
           <span className="sr-only">{line.available ? 'Line total ' : 'Not included: '}</span>
           <Money amountMinor={line.lineTotalMinor} />
@@ -194,7 +191,8 @@ function CartLineRow({
         <div className="flex gap-2">
           {editing ? null : (
             <Button
-              variant="secondary"
+              variant="soft"
+              size="sm"
               aria-label={`${line.specialInstructions ? 'Edit' : 'Add'} instructions for ${label}`}
               disabled={disabled}
               onClick={() => setEditing(true)}
@@ -204,6 +202,7 @@ function CartLineRow({
           )}
           <Button
             variant="secondary"
+            size="sm"
             aria-label={`Remove ${label}`}
             disabled={disabled}
             onClick={onRemove}
@@ -237,7 +236,7 @@ function InstructionsForm({
   };
   return (
     <form onSubmit={onSubmit} className="mt-3">
-      <label htmlFor={id} className="mb-1 block text-sm font-medium text-text">
+      <label htmlFor={id} className="mb-2 block text-sm font-semibold text-text">
         Instructions for {label}
       </label>
       <textarea
@@ -247,17 +246,17 @@ function InstructionsForm({
         maxLength={SPECIAL_INSTRUCTIONS_MAX_LENGTH}
         rows={2}
         aria-describedby={`${id}-hint`}
-        className="w-full rounded-md border border-border-strong bg-surface px-3 py-2 text-base text-text"
+        className="w-full resize-none rounded-xl border-[1.5px] border-border-strong bg-surface px-4 py-3 text-base text-text focus:border-brand focus:shadow-ring-brand"
       />
-      <p id={`${id}-hint`} className="mt-1 text-sm text-text-muted">
+      <p id={`${id}-hint`} className="mt-1 text-xs text-text-muted">
         For example &quot;no onion&quot;. Up to {SPECIAL_INSTRUCTIONS_MAX_LENGTH} characters; it
         doesn&apos;t change the price.
       </p>
       <div className="mt-2 flex gap-2">
-        <Button type="submit" disabled={disabled}>
+        <Button type="submit" size="sm" disabled={disabled}>
           Save note
         </Button>
-        <Button variant="secondary" onClick={onCancel}>
+        <Button variant="secondary" size="sm" onClick={onCancel}>
           Cancel
         </Button>
       </div>

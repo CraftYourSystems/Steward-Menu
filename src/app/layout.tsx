@@ -29,7 +29,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en-IN" className={`${inter.variable} ${expletus.variable}`}>
       <body className="bg-background font-sans text-text antialiased">
         <CustomerQueryProvider>
-          <main className="mx-auto min-h-dvh w-full max-w-xl px-4 py-6 sm:px-6">{children}</main>
+          <main className="mx-auto min-h-dvh w-full max-w-xl px-5 py-6">{children}</main>
         </CustomerQueryProvider>
       </body>
     </html>

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useReducer, type ReactNode } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { RestaurantHeader } from '@/components/ui/RestaurantHeader';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { orderPagePath } from '@/features/customer-order/paths';
 import { enterSession } from '../api';
@@ -180,10 +181,11 @@ export function CustomerSessionBoundary({
 
   return (
     <CustomerSessionContext.Provider value={value}>
-      <header className="mb-6">
-        <h1 className="text-2xl font-semibold text-text">{data.restaurantName}</h1>
-        <p className="mt-1 text-sm text-text-muted">Table {data.tableNumber}</p>
-      </header>
+      <RestaurantHeader
+        eyebrow="Welcome to"
+        restaurantName={data.restaurantName}
+        tableNumber={data.tableNumber}
+      />
       {state.phase === 'lost' ? (
         <ErrorState
           title="We couldn't keep your table session"
@@ -207,16 +209,16 @@ function SessionEndedNotice({ onDismiss }: { onDismiss: () => void }) {
     <section
       role="status"
       aria-labelledby="session-ended-title"
-      className="mb-6 rounded-lg border border-border bg-surface-muted px-4 py-3"
+      className="mb-6 rounded-3xl border border-brand-border bg-brand-surface px-5 py-4"
     >
-      <h2 id="session-ended-title" className="text-sm font-semibold text-text">
+      <h2 id="session-ended-title" className="text-sm font-bold text-text">
         Your session ended
       </h2>
       <p className="mt-1 text-sm text-text-muted">
         There was no activity for a while, so your cart was emptied. You can keep ordering from the
         menu.
       </p>
-      <Button variant="secondary" className="mt-3" onClick={onDismiss}>
+      <Button variant="secondary" size="sm" className="mt-3" onClick={onDismiss}>
         OK
       </Button>
     </section>
@@ -231,7 +233,7 @@ function EntryLoading() {
       <Skeleton className="mt-2 h-4 w-1/4" />
       <div className="mt-8 space-y-4">
         {[0, 1, 2, 3].map((row) => (
-          <Skeleton key={row} className="h-12 w-full" />
+          <Skeleton key={row} className="h-24 w-full" />
         ))}
       </div>
     </div>

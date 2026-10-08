@@ -4,9 +4,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Button } from '@/components/ui/Button';
+import { Button, buttonClasses } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
+import { PageTitleBar } from '@/components/ui/PageTitleBar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatePanel } from '@/components/ui/StatePanel';
 import { orderPagePath } from '@/features/customer-order/paths';
@@ -197,13 +198,11 @@ export function PaymentReturnPage() {
 
   return (
     <section aria-labelledby="payment-title">
-      <h2 id="payment-title" className="mb-4 text-lg font-semibold text-text">
-        Payment
-      </h2>
+      <PageTitleBar id="payment-title" title="Payment" />
       {checkout.isPending || isUnauthorized(checkout.error) || placedOrderRef ? (
         <div aria-busy="true" aria-live="polite">
           <p className="sr-only">Loading your payment…</p>
-          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-48 w-full" />
         </div>
       ) : checkout.isError ? (
         <ErrorState
@@ -254,7 +253,7 @@ function NoPayment({ base, reviewed }: { base: string; reviewed: boolean }) {
       action={
         <Link
           href={reviewed ? `${base}/checkout` : `${base}/cart`}
-          className="text-sm font-medium text-brand underline"
+          className={buttonClasses('secondary', 'sm')}
         >
           {reviewed ? 'Back to your order' : 'Back to your cart'}
         </Link>
@@ -275,9 +274,13 @@ type PaymentStateProps = {
 function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: PaymentStateProps) {
   const payment = checkout.payment;
   const attemptsLeft = payment ? payment.attemptsMade < payment.attemptsLimit : true;
+  // The prototype's payment amount: a quiet label over the large total.
   const total = (
-    <p className="mt-2 text-sm text-text-muted">
-      Order total <Money amountMinor={checkout.totalMinor} />
+    <p className="mt-5 text-sm text-text-muted">
+      Order total{' '}
+      <span className="mt-1 block text-3xl font-bold tracking-tight text-text">
+        <Money amountMinor={checkout.totalMinor} />
+      </span>
     </p>
   );
   const review = (variant: 'primary' | 'secondary') => (
@@ -285,7 +288,7 @@ function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: 
       Review / change order
     </Button>
   );
-  const retry = (label: string, variant: 'primary' | 'secondary' = 'primary') => (
+  const retry = (label: string, variant: 'confirm' | 'secondary' = 'confirm') => (
     <Button variant={variant} disabled={busy} onClick={onRetry}>
       {label}
     </Button>
@@ -330,6 +333,7 @@ function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: 
           title={still ? 'Still confirming your previous payment…' : 'Confirming payment…'}
           description={
             <>
+              <Spinner />
               <p>
                 {still
                   ? 'Your last payment is still being confirmed. You can change your order once it is.'
@@ -389,10 +393,20 @@ function PaymentState({ checkout, awaiting, notice, busy, onRetry, onRelease }: 
   );
 }
 
+/** The prototype's payment spinner. Decorative: the heading says what is happening. */
+function Spinner() {
+  return (
+    <span
+      aria-hidden="true"
+      className="mx-auto mb-4 block size-6 rounded-full border-2 border-border border-t-confirmation motion-safe:animate-spin"
+    />
+  );
+}
+
 function NoticeMessage({ notice }: { notice: PaymentNotice | null }) {
   if (!notice || typeof notice === 'string') return null;
   return (
-    <div role="alert" className="rounded-lg border border-danger bg-danger-subtle px-4 py-3">
+    <div role="alert" className="rounded-2xl border border-danger bg-danger-subtle px-4 py-3">
       <p className="text-sm text-text">{notice.message}</p>
     </div>
   );

@@ -7,8 +7,10 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Money } from '@/components/ui/Money';
+import { PageTitleBar } from '@/components/ui/PageTitleBar';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { StatePanel } from '@/components/ui/StatePanel';
+import { StickyFooter } from '@/components/ui/StickyFooter';
 import { customerKeys } from '@/features/customer-session/query-keys';
 import {
   isUnauthorized,
@@ -159,14 +161,11 @@ export function CustomerCheckoutPage() {
 
   return (
     <section aria-labelledby="review-title">
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <h2 id="review-title" className="text-lg font-semibold text-text">
-          Review your order
-        </h2>
-        <Link href={`${base}/cart`} className="text-sm font-medium text-brand underline">
-          Back to cart
-        </Link>
-      </div>
+      <PageTitleBar
+        id="review-title"
+        title="Review your order"
+        back={{ href: `${base}/cart`, label: 'Back to cart' }}
+      />
 
       <ReviewProblemNotice problem={problem} />
       <PayProblemNotice problem={payProblem} />
@@ -174,8 +173,8 @@ export function CustomerCheckoutPage() {
       {checkout.isPending || isUnauthorized(checkout.error) ? (
         <div aria-busy="true" aria-live="polite">
           <p className="sr-only">Loading your order…</p>
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="mt-4 h-16 w-full" />
+          <Skeleton className="h-28 w-full" />
+          <Skeleton className="mt-4 h-40 w-full" />
         </div>
       ) : checkout.isError ? (
         <ErrorState
@@ -226,7 +225,7 @@ function ReviewProblemNotice({ problem }: { problem: ReviewProblem | null }) {
   })();
   if (!message) return null;
   return (
-    <div role="alert" className="mb-4 rounded-lg border border-danger bg-danger-subtle px-4 py-3">
+    <div role="alert" className="mb-4 rounded-2xl border border-danger bg-danger-subtle px-4 py-3">
       <p className="text-sm text-text">{message}</p>
       {problem.kind === 'error' && problem.requestId ? (
         <p className="mt-1 font-mono text-xs text-text-muted">Reference: {problem.requestId}</p>
@@ -261,7 +260,7 @@ function PayProblemNotice({ problem }: { problem: PaymentProblem | null }) {
   })();
   if (!message) return null;
   return (
-    <div role="alert" className="mb-4 rounded-lg border border-danger bg-danger-subtle px-4 py-3">
+    <div role="alert" className="mb-4 rounded-2xl border border-danger bg-danger-subtle px-4 py-3">
       <p className="text-sm text-text">{message}</p>
       {problem.kind === 'error' && problem.requestId ? (
         <p className="mt-1 font-mono text-xs text-text-muted">Reference: {problem.requestId}</p>
@@ -279,17 +278,20 @@ type ReviewedOrderProps = {
 
 function ReviewedOrder({ checkout, base, paying, onPay }: ReviewedOrderProps) {
   return (
-    <div className="space-y-6">
-      <section aria-labelledby="review-customer" className="rounded-lg border border-border p-4">
-        <div className="flex items-start justify-between gap-4">
-          <h3 id="review-customer" className="text-sm font-semibold text-text">
+    <div className="space-y-4">
+      <section aria-labelledby="review-customer" className="rounded-3xl bg-surface p-5 shadow-sm">
+        <div className="flex items-center justify-between gap-4">
+          <h3 id="review-customer" className="text-base font-bold tracking-tight text-text">
             Your details
           </h3>
-          <Link href={`${base}/details`} className="text-sm font-medium text-brand underline">
+          <Link
+            href={`${base}/details`}
+            className="inline-flex min-h-8 items-center rounded-full border-[1.5px] border-brand-border bg-brand-surface px-3 text-xs font-semibold text-brand hover:bg-brand-subtle"
+          >
             Change
           </Link>
         </div>
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+        <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
           <dt className="text-text-muted">Name</dt>
           <dd className="text-text">{checkout.customerName}</dd>
           <dt className="text-text-muted">Mobile</dt>
@@ -299,27 +301,27 @@ function ReviewedOrder({ checkout, base, paying, onPay }: ReviewedOrderProps) {
         </dl>
       </section>
 
-      <section aria-labelledby="review-items">
-        <h3 id="review-items" className="text-sm font-semibold text-text">
+      <section aria-labelledby="review-items" className="rounded-3xl bg-surface p-5 shadow-sm">
+        <h3 id="review-items" className="text-base font-bold tracking-tight text-text">
           Your order
         </h3>
         <ul className="mt-2 divide-y divide-border">
           {checkout.lines.map((line, index) => (
-            <li key={index} className="flex items-start justify-between gap-4 py-3">
+            <li key={index} className="flex items-start justify-between gap-4 py-3 text-sm">
               <div className="min-w-0">
                 <p className="font-medium break-words text-text">
-                  {line.quantity} × {line.name}
+                  <span className="font-bold text-brand">{line.quantity} ×</span> {line.name}
                 </p>
-                <p className="text-sm text-text-muted">
+                <p className="mt-0.5 text-xs text-text-muted">
                   <Money amountMinor={line.unitPriceMinor} /> each
                 </p>
                 {line.specialInstructions ? (
-                  <p className="mt-1 text-sm break-words text-text-muted">
+                  <p className="mt-0.5 text-xs break-words text-text-muted italic">
                     Note: {line.specialInstructions}
                   </p>
                 ) : null}
               </div>
-              <p className="shrink-0 font-medium text-text">
+              <p className="shrink-0 font-semibold text-text">
                 <Money amountMinor={line.lineTotalMinor} />
               </p>
             </li>
@@ -327,23 +329,23 @@ function ReviewedOrder({ checkout, base, paying, onPay }: ReviewedOrderProps) {
         </ul>
       </section>
 
-      <section aria-label="Amounts" className="border-t border-border pt-4">
-        <dl className="space-y-1 text-sm">
+      <section aria-label="Amounts" className="rounded-3xl bg-surface p-5 shadow-sm">
+        <dl className="space-y-3 text-sm">
           <div className="flex justify-between">
             <dt className="text-text-muted">Subtotal</dt>
-            <dd className="text-text">
+            <dd className="text-text-muted">
               <Money amountMinor={checkout.subtotalMinor} />
             </dd>
           </div>
           {checkout.taxes.map((tax, index) => (
             <div key={index} className="flex justify-between">
               <dt className="text-text-muted">{tax.label}</dt>
-              <dd className="text-text">
+              <dd className="text-text-muted">
                 <Money amountMinor={tax.amountMinor} />
               </dd>
             </div>
           ))}
-          <div className="flex justify-between border-t border-border pt-2 text-base font-semibold">
+          <div className="flex justify-between border-t-[1.5px] border-dashed border-border-strong pt-4 text-xl font-bold tracking-tight">
             <dt className="text-text">Total</dt>
             <dd className="text-text">
               <Money amountMinor={checkout.totalMinor} />
@@ -353,9 +355,16 @@ function ReviewedOrder({ checkout, base, paying, onPay }: ReviewedOrderProps) {
       </section>
 
       {checkout.status === 'open' ? (
-        <Button className="w-full" disabled={paying} onClick={() => onPay(checkout.checkoutId)}>
-          {paying ? 'Opening payment…' : 'Pay'}
-        </Button>
+        <StickyFooter>
+          <Button
+            variant="confirm"
+            className="w-full"
+            disabled={paying}
+            onClick={() => onPay(checkout.checkoutId)}
+          >
+            {paying ? 'Opening payment…' : 'Pay'}
+          </Button>
+        </StickyFooter>
       ) : null}
     </div>
   );

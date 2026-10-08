@@ -1,4 +1,3 @@
-import { Button } from '@/components/ui/Button';
 import { CART_LINE_MAX_QUANTITY } from '../schemas';
 
 /**
@@ -21,30 +20,38 @@ export function QuantityControl({
   onDecrease: () => void;
   onIncrease: () => void;
 }) {
+  // The prototype's quantity control: one Teal-outlined group, − and a filled +.
   return (
-    <div role="group" aria-label={`${name} quantity`} className="flex items-center gap-2">
-      <Button
-        variant="secondary"
-        className="min-w-10 px-0"
+    <div
+      role="group"
+      aria-label={`${name} quantity`}
+      className="flex items-center rounded-xl border-[1.5px] border-brand bg-surface"
+    >
+      <button
+        type="button"
+        className="flex size-9 items-center justify-center rounded-l-[10.5px] text-lg font-bold text-brand hover:bg-brand-surface disabled:cursor-not-allowed disabled:opacity-60"
         aria-label={`Decrease ${name}`}
         disabled={disabled}
         onClick={onDecrease}
       >
         −
-      </Button>
-      <span className="min-w-6 text-center font-medium tabular-nums" aria-live="polite">
+      </button>
+      <span
+        className="min-w-8 text-center text-sm font-bold text-text tabular-nums"
+        aria-live="polite"
+      >
         <span className="sr-only">Quantity </span>
         {quantity}
       </span>
-      <Button
-        variant="secondary"
-        className="min-w-10 px-0"
+      <button
+        type="button"
+        className="flex size-9 items-center justify-center rounded-r-[10.5px] bg-brand text-lg font-bold text-brand-contrast disabled:cursor-not-allowed disabled:opacity-60"
         aria-label={`Increase ${name}`}
         disabled={disabled || !canIncrease || quantity >= CART_LINE_MAX_QUANTITY}
         onClick={onIncrease}
       >
         +
-      </Button>
+      </button>
     </div>
   );
 }
