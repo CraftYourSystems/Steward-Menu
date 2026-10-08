@@ -1,5 +1,13 @@
 import { defineConfig, devices } from '@playwright/test';
 
+/**
+ * Servers are started by `node` directly, not through `pnpm start`: pnpm runs
+ * a script in its own process group, so on Linux Playwright's teardown killed
+ * pnpm but left `next-server` running, and the run never ended (CI hung after
+ * every test had passed). Started this way, they are stopped with Playwright.
+ */
+const NEXT_START = 'node node_modules/next/dist/bin/next start';
+
 const APP_PORT = 3310;
 // Overridable so the suite can run while a development mock API holds 8788.
 const MOCK_API_PORT = Number(process.env.E2E_MOCK_API_PORT ?? 8788);
@@ -28,13 +36,13 @@ export default defineConfig({
   ],
   webServer: [
     {
-      command: 'pnpm mock:api',
+      command: 'node node_modules/tsx/dist/cli.mjs src/test/mock-api/server.ts',
       port: MOCK_API_PORT,
       env: { MOCK_API_PORT: String(MOCK_API_PORT) },
       reuseExistingServer: false,
     },
     {
-      command: `pnpm build && pnpm start --port ${APP_PORT}`,
+      command: `pnpm build && ${NEXT_START} --port ${APP_PORT}`,
       port: APP_PORT,
       env: { NEXT_PUBLIC_API_BASE_URL: MOCK_API_URL },
       timeout: 300_000,

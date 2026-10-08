@@ -17,6 +17,14 @@ import { defineConfig, devices } from '@playwright/test';
  * Tests run one at a time: they share one seeded database.
  */
 
+/**
+ * Servers are started by `node` directly, not through `pnpm start`: pnpm runs
+ * a script in its own process group, so on Linux Playwright's teardown killed
+ * pnpm but left `next-server` running, and the run never ended (CI hung after
+ * every test had passed). Started this way, they are stopped with Playwright.
+ */
+const NEXT_START = 'node node_modules/next/dist/bin/next start';
+
 const APP_PORT = 3320;
 
 if (!process.env.E2E_API_BASE_URL) {
@@ -41,7 +49,7 @@ export default defineConfig({
     { name: 'mobile-chromium', use: { ...devices['Pixel 7'], channel: 'chromium' } },
   ],
   webServer: {
-    command: `pnpm build && pnpm start --port ${APP_PORT}`,
+    command: `pnpm build && ${NEXT_START} --port ${APP_PORT}`,
     port: APP_PORT,
     env: { NEXT_PUBLIC_API_BASE_URL: apiBaseUrl },
     timeout: 300_000,
