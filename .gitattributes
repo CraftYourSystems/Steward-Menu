@@ -1,0 +1,9 @@
+# Source is LF everywhere so CI (Linux) and Windows checkouts agree.
+* text=auto eol=lf
+
+# Binary documents must never be line-ending converted.
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

@@ -1,0 +1,113 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/*
+ * Semantic tokens. Tailwind's default palette is removed so that generic
+ * colours (bg-blue-500, text-gray-700, …) do not exist as accidental choices.
+ * Values follow the locked prototype's semantic layer (`--color-*` in its
+ * tokens.css); see tokens.css for where accessibility overrides a value.
+ */
+@theme {
+  --color-*: initial;
+
+  --color-brand: var(--steward-teal);
+  --color-brand-contrast: var(--steward-white);
+  --color-brand-surface: var(--steward-teal-10);
+  --color-brand-subtle: var(--steward-teal-20);
+  --color-brand-border: var(--steward-teal-40);
+  --color-accent: var(--steward-mist);
+
+  --color-background: var(--steward-gray-10);
+  --color-surface: var(--steward-white);
+  --color-surface-muted: var(--steward-gray-10);
+
+  --color-text: var(--steward-ink);
+  --color-text-muted: var(--steward-gray-80);
+  --color-text-inverse: var(--steward-white);
+
+  --color-border: var(--steward-gray-20);
+  --color-border-strong: var(--steward-gray-60);
+
+  --color-focus: var(--steward-blue);
+
+  /* The prototype's "confirmation" is Royal Blue: payment actions. */
+  --color-confirmation: var(--steward-blue);
+  --color-confirmation-subtle: var(--steward-blue-10);
+  --color-warning: var(--steward-warning-700);
+  --color-warning-subtle: var(--steward-warning-50);
+  --color-danger: var(--steward-danger-700);
+  --color-danger-subtle: var(--steward-danger-50);
+
+  --color-glass: var(--steward-glass);
+  --color-glass-border: var(--steward-glass-border);
+  --color-glass-on-brand: var(--steward-glass-on-brand);
+  --color-glass-on-brand-border: var(--steward-glass-on-brand-border);
+
+  --shadow-xs: var(--steward-shadow-xs);
+  --shadow-sm: var(--steward-shadow-sm);
+  --shadow-md: var(--steward-shadow-md);
+  --shadow-glass: var(--steward-shadow-glass);
+  --shadow-brand: var(--steward-shadow-brand);
+  --shadow-confirm: var(--steward-shadow-confirm);
+  --shadow-bar: var(--steward-shadow-bar);
+  --shadow-ring-brand: var(--steward-shadow-ring-brand);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-expletus), var(--font-inter), ui-sans-serif, sans-serif;
+
+  /* The prototype's letter spacing scale. */
+  --tracking-display: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-eyebrow: 0.12em;
+
+  --animate-bar-in: bar-in 380ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  --animate-step-pulse: step-pulse 1.4s ease-in-out infinite;
+
+  @keyframes bar-in {
+    from {
+      transform: translateY(70px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  @keyframes step-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.5;
+      transform: scale(0.7);
+    }
+  }
+}
+
+/* Prototype gradients, as utilities so components never hold raw values. */
+@utility bg-gradient-brand {
+  background-image: var(--steward-gradient-brand);
+}
+
+@utility bg-gradient-confirm {
+  background-image: var(--steward-gradient-confirm);
+}
+
+@utility bg-gradient-card {
+  background-image: var(--steward-gradient-card);
+}
+
+@layer base {
+  html {
+    color: var(--color-text);
+    background-color: var(--color-background);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+}
